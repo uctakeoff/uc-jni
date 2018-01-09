@@ -100,9 +100,16 @@ public class UcJniTest {
     @Test public native void samplePoint() throws Exception;
 
 
+    @Test public void testRef() throws Exception
+    {
+        testGlobalRef();
+        testWeakRef();
+    }
+    public native void testGlobalRef() throws Exception;
+    public native void testWeakRef() throws Exception;
+
     @Test public native void testToJstring() throws Exception;
     @Test public native void testToString() throws Exception;
-    @Test public native void testWeakRef() throws Exception;
     @Test public native void testIsInstanceOf() throws Exception;
 
     @Test public native void testTypeTraitsSignature() throws Exception;
@@ -149,4 +156,7 @@ public class UcJniTest {
     @Test public native void testMethodDouble() throws Exception;
     @Test public native void testMethodString() throws Exception;
     @Test public native void testMethodStringJp() throws Exception;
+
+    @Test public native void testArray() throws Exception;
+
 }

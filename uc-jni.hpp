@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "0.1.0"
-#define UC_JNI_VERSION_NUM 0x000100
+#define UC_JNI_VERSION "0.1.1"
+#define UC_JNI_VERSION_NUM 0x000101
 
 #include <jni.h>
 #include <memory>
@@ -59,20 +59,20 @@ inline JNIEnv* env() noexcept
 // Global and Local References
 //*************************************************************************************************
 
-template <typename T, typename U> using is_base_of_ptr = std::is_base_of<std::remove_pointer_t<T>, std::remove_pointer_t<U>>;
-template <typename T> using is_derived_from_jobject = is_base_of_ptr<jobject, T>;
+template <typename T, typename U> using is_base_ptr_of = std::is_base_of<std::remove_pointer_t<T>, std::remove_pointer_t<U>>;
 
-template <typename JObj, std::enable_if_t<is_base_of_ptr<jobject, JObj>::value, std::nullptr_t> = nullptr>
-JObj get(const JObj& obj) noexcept
+template <typename T, std::enable_if_t<is_base_ptr_of<jobject, T>::value, std::nullptr_t> = nullptr>
+T get(T obj) noexcept
 {
     return obj;
 }
-template <typename JObj, std::enable_if_t<is_base_of_ptr<jobject, typename JObj::element_type*>::value, std::nullptr_t> = nullptr>
-typename JObj::element_type* get(const JObj& obj) noexcept
+template <typename T, std::enable_if_t<is_base_ptr_of<jobject, typename T::element_type*>::value, std::nullptr_t> = nullptr>
+typename T::element_type* get(const T& obj) noexcept
 {
     return obj.get();
 }
-template <typename JArray> using native_ref = decltype(get<JArray>(JArray{}));
+
+template <typename JObj> using native_ref = decltype(get<JObj>({}));
 
 
 template <typename JObj> struct local_ref_deleter
@@ -90,11 +90,11 @@ template <typename JObj> local_ref<JObj> make_local(JObj obj) noexcept
 
 
 template <typename JObj> using global_ref = std::shared_ptr<std::remove_pointer_t<JObj>>;
-template <typename JObj> auto make_global(const JObj& obj) -> global_ref<decltype(get(obj))>
+template <typename JObj> global_ref<native_ref<JObj>> make_global(const JObj& obj)
 {
-    using jobj_t = decltype(get(obj));
-    return global_ref<jobj_t>(static_cast<jobj_t>(env()->NewGlobalRef(get(obj))), [](jobj_t p) { env()->DeleteGlobalRef(p); });
+    return global_ref<native_ref<JObj>>(static_cast<native_ref<JObj>>(env()->NewGlobalRef(get(obj))), [](native_ref<JObj> p) { env()->DeleteGlobalRef(p); });
 }
+
 
 //*************************************************************************************************
 // Weak Global References
@@ -148,9 +148,9 @@ inline local_ref<jclass> find_class(const char* fqcn)
     if (env()->ExceptionCheck()) throw exception();
     return make_local(o);
 }
-template<typename JCls> jclass get_class()
+template<typename JObj> jclass get_class()
 {
-    static auto instance = make_global(find_class(fqcn<JCls>()));
+    static auto instance = make_global(find_class(fqcn<JObj>()));
     return instance.get();
 }
 
@@ -171,13 +171,13 @@ template <typename JObj> local_ref<jclass> get_object_class(const JObj& obj) noe
 {
     return make_local(env()->GetObjectClass(get(obj)));
 }
-template <typename JObj, typename JCls> bool is_instance_of(const JObj& obj, const JCls& clazz) noexcept
+template <typename JObj, typename JClass> bool is_instance_of(const JObj& obj, const JClass& clazz) noexcept
 {
     return env()->IsInstanceOf(get(obj), get(clazz)) == JNI_TRUE;
 }
-template <typename JCls, typename JObj> bool is_instance_of(const JObj& obj) noexcept
+template <typename JType, typename JObj> bool is_instance_of(const JObj& obj) noexcept
 {
-    return is_instance_of(obj, get_class<JCls>());
+    return is_instance_of(obj, get_class<JType>());
 }
 template <typename JObj1, typename JObj2> bool is_same_object(const JObj1& ref1, const JObj2& ref2) noexcept
 {
@@ -192,9 +192,9 @@ inline void exception_check()
 {
     if (env()->ExceptionCheck()) throw exception();
 }
-template <typename JCls> void throw_new(const char* what) noexcept
+template <typename JThrowable> void throw_new(const char* what) noexcept
 {
-    env()->ThrowNew(get_class<JCls>(), what);
+    env()->ThrowNew(get_class<JThrowable>(), what);
 }
 
 DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
@@ -353,22 +353,22 @@ template <typename T, typename Traits = function_traits<T>> local_ref<typename T
 {
     return make_local(Traits::new_array(env(), length));
 }
-template <typename JArray, typename Traits = function_traits<decltype(get<JArray>(JArray{}))>> 
+template <typename JArray, typename Traits = function_traits<native_ref<JArray>>> 
 void get_region(const JArray& array, jsize start, jsize len, typename Traits::value_type* buf)
 {
     Traits::get_region(env(), get(array), start, len, buf);
 }
-template <typename JArray, typename Traits = function_traits<decltype(get<JArray>(JArray{}))>> 
+template <typename JArray, typename Traits = function_traits<native_ref<JArray>>>
 void set_region(const JArray& array, jsize start, jsize len, const typename Traits::value_type* buf)
 {
     Traits::set_region(env(), get(array), start, len, buf);
 }
-template <typename T, std::enable_if_t<is_base_of_ptr<jarray, T>::value, std::nullptr_t> = nullptr>
+template <typename T, std::enable_if_t<is_base_ptr_of<jarray, T>::value, std::nullptr_t> = nullptr>
 jsize length(T array) noexcept
 {
     return env()->GetArrayLength(array);
 }
-template <typename T, std::enable_if_t<is_base_of_ptr<jarray, typename T::element_type*>::value, std::nullptr_t> = nullptr>
+template <typename T, std::enable_if_t<is_base_ptr_of<jarray, typename T::element_type*>::value, std::nullptr_t> = nullptr>
 jsize length(const T& array) noexcept
 {
     return length(array.get());
@@ -378,23 +378,23 @@ template<typename Traits> struct array_elements_deleter
 {
     void operator()(typename Traits::value_type* p) const noexcept
     {
-        Traits::release_elements(env(), array.get(), p, release_mode);
+        Traits::release_elements(env(), array, p, release_mode);
     }
-    local_ref<typename Traits::array_type> array;
+    typename Traits::array_type array;
     jint release_mode;
 };
 template <typename Traits> using array_elements = std::unique_ptr<typename Traits::value_type, array_elements_deleter<Traits>>;
 
-template <typename JArray, typename Traits = function_traits<decltype(get<JArray>(JArray{}))>> 
+template <typename JArray, typename Traits = function_traits<native_ref<JArray>>>
 array_elements<Traits> get_elements(const JArray& array, bool abortive = false, jboolean* isCopy = nullptr)
 {
-    return array_elements<Traits>(Traits::get_elements(env(), get(array), isCopy), array_elements_deleter<Traits>{make_local(get(array)), abortive ? JNI_ABORT : 0});
+    return array_elements<Traits>(Traits::get_elements(env(), get(array), isCopy), array_elements_deleter<Traits>{get(array), abortive ? JNI_ABORT : 0});
 }
 
 //! copy back the content  cf. Release<PrimitiveType>ArrayElements(...,JNI_COMMIT)
 template <typename Traits> void commit(array_elements<Traits>& elems)
 {
-    Traits::release_elements(env(), elems.get_deleter().array.get(), elems.get(), JNI_COMMIT);
+    Traits::release_elements(env(), elems.get_deleter().array, elems.get(), JNI_COMMIT);
 }
 template <typename Traits> void set_abort(array_elements<Traits>& elems, bool abortive = true)
 {
@@ -410,8 +410,18 @@ template <typename Traits> typename Traits::value_type* end(array_elements<Trait
     return elems.get() + length(elems.get_deleter().array);
 }
 
+template <typename Traits> const typename Traits::value_type* begin(const array_elements<Traits>& elems)
+{
+    return elems.get();
+}
+template <typename Traits> const typename Traits::value_type* end(const array_elements<Traits>& elems)
+{
+    return elems.get() + length(elems.get_deleter().array);
+}
 
-template<typename T> class array
+
+template <typename T, std::enable_if_t<is_base_ptr_of<jobject, T>::value, std::nullptr_t> = nullptr>
+class array
 {
 public:
     array() = default;
@@ -621,8 +631,8 @@ template <typename T> struct type_traits<std::vector<T>>
     }
     static std::vector<T> c_cast(jvalue_type v)
     {
-        const auto len = env()->GetArrayLength(v);
-        std::vector<T> ret(static_cast<size_t>(len));
+        const auto len = length(v);
+        std::vector<T> ret(len);
         jni::get_region(v, 0, len, ret.data());
         return ret;
     }
@@ -645,9 +655,9 @@ template <typename T> struct type_traits<std::vector<T*>>
     static decltype(auto) c_cast(jobjectArray v)
     {
         const auto e = env();
-        const auto len = static_cast<size_t>(e->GetArrayLength(v));
+        const auto len = length(v);
         std::vector<T*> ret(len);
-        for (size_t i = 0; i < len; ++i) {
+        for (jsize i = 0; i < len; ++i) {
             ret[i] = static_cast<T*>(e->GetObjectArrayElement(v, i));
         }
         return ret;
@@ -665,21 +675,21 @@ template <typename T> struct type_traits<std::vector<T*>>
 };
 
 
-template<typename JCls, typename T> jfieldID get_field_id(const char* name) noexcept
+template<typename JType, typename T> jfieldID get_field_id(const char* name) noexcept
 {
-    return env()->GetFieldID(get_class<JCls>(), name, type_traits<T>::signature().c_str());
+    return env()->GetFieldID(get_class<JType>(), name, type_traits<T>::signature().c_str());
 }
-template<typename JCls, typename T> jfieldID get_static_field_id(const char* name) noexcept
+template<typename JType, typename T> jfieldID get_static_field_id(const char* name) noexcept
 {
-    return env()->GetStaticFieldID(get_class<JCls>(), name, type_traits<T>::signature().c_str());
+    return env()->GetStaticFieldID(get_class<JType>(), name, type_traits<T>::signature().c_str());
 }
-template<typename JCls, typename T> jmethodID get_method_id(const char* name) noexcept
+template<typename JType, typename T> jmethodID get_method_id(const char* name) noexcept
 {
-    return env()->GetMethodID(get_class<JCls>(), name, type_traits<T>::signature().c_str());
+    return env()->GetMethodID(get_class<JType>(), name, type_traits<T>::signature().c_str());
 }
-template<typename JCls, typename T> jmethodID get_static_method_id(const char* name) noexcept
+template<typename JType, typename T> jmethodID get_static_method_id(const char* name) noexcept
 {
-    return env()->GetStaticMethodID(get_class<JCls>(), name, type_traits<T>::signature().c_str());
+    return env()->GetStaticMethodID(get_class<JType>(), name, type_traits<T>::signature().c_str());
 }
 
 
@@ -687,7 +697,7 @@ template<typename JCls, typename T> jmethodID get_static_method_id(const char* n
 // Accessing Fields
 //*************************************************************************************************
 
-template<typename JCls, typename T> struct field
+template<typename JType, typename T> struct field
 {
     template<typename JObj> decltype(auto) get(const JObj& obj) const
     {
@@ -699,30 +709,30 @@ template<typename JCls, typename T> struct field
     }
     jfieldID id{};
 };
-template <typename JCls, typename T> field<JCls, T> make_field(const char* name) noexcept
+template <typename JType, typename T> field<JType, T> make_field(const char* name) noexcept
 {
-    return field<JCls, T>{ get_field_id<JCls, T>(name) };
+    return field<JType, T>{ get_field_id<JType, T>(name) };
 }
 
 //*************************************************************************************************
 // Accessing Static Fields
 //*************************************************************************************************
 
-template<typename JCls, typename T> struct static_field
+template<typename JType, typename T> struct static_field
 {
     decltype(auto) get() const
     {
-        return type_traits<T>::c_cast(function_traits<typename type_traits<T>::jvalue_type>::get_static_field(env(), get_class<JCls>(), id));
+        return type_traits<T>::c_cast(function_traits<typename type_traits<T>::jvalue_type>::get_static_field(env(), get_class<JType>(), id));
     }
     void set(const T& value)
     {
-        function_traits<typename type_traits<T>::jvalue_type>::set_static_field(env(), get_class<JCls>(), id, type_traits<T>::j_cast(value));
+        function_traits<typename type_traits<T>::jvalue_type>::set_static_field(env(), get_class<JType>(), id, type_traits<T>::j_cast(value));
     }
     jfieldID id{};
 };
-template <typename JCls, typename T> static_field<JCls, T> make_static_field(const char* name) noexcept
+template <typename JType, typename T> static_field<JType, T> make_static_field(const char* name) noexcept
 {
-    return static_field<JCls, T>{ get_static_field_id<JCls, T>(name) };
+    return static_field<JType, T>{ get_static_field_id<JType, T>(name) };
 }
 
 //*************************************************************************************************
@@ -730,7 +740,7 @@ template <typename JCls, typename T> static_field<JCls, T> make_static_field(con
 //*************************************************************************************************
 
 template <typename...> struct method;
-template <typename JCls, typename... Args> struct method<JCls, void(Args...)> 
+template <typename JType, typename... Args> struct method<JType, void(Args...)> 
 {
     template<typename JObj> void operator()(const JObj& obj, const Args&... args) noexcept
     {
@@ -740,7 +750,7 @@ template <typename JCls, typename... Args> struct method<JCls, void(Args...)>
 
     jmethodID id{};
 };
-template <typename JCls, typename R, typename... Args> struct method<JCls, R(Args...)> 
+template <typename JType, typename R, typename... Args> struct method<JType, R(Args...)> 
 {
     template<typename JObj> decltype(auto) operator()(const JObj& obj, const Args&... args) noexcept
     {
@@ -751,37 +761,37 @@ template <typename JCls, typename R, typename... Args> struct method<JCls, R(Arg
 
     jmethodID id{};
 };
-template <typename JCls, typename Fun> method<JCls, Fun> make_method(const char* name) noexcept
+template <typename JType, typename Fun> method<JType, Fun> make_method(const char* name) noexcept
 {
-    return method<JCls, Fun>{ get_method_id<JCls, Fun>(name) };
+    return method<JType, Fun>{ get_method_id<JType, Fun>(name) };
 }
 
 
 template <typename...> struct non_virtual_method;
-template <typename JCls, typename... Args> struct non_virtual_method<JCls, void(Args...)> 
+template <typename JType, typename... Args> struct non_virtual_method<JType, void(Args...)> 
 {
     template<typename JObj> void operator()(const JObj& obj, const Args&... args) noexcept
     {
-        function_traits<void>::call_non_virtual_method(env(), get(obj), get_class<JCls>(), id, type_traits<Args>::j_cast(args)...);
+        function_traits<void>::call_non_virtual_method(env(), get(obj), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
     }
 
     jmethodID id{};
 };
-template <typename JCls, typename R, typename... Args> struct non_virtual_method<JCls, R(Args...)> 
+template <typename JType, typename R, typename... Args> struct non_virtual_method<JType, R(Args...)> 
 {
     template<typename JObj> decltype(auto) operator()(const JObj& obj, const Args&... args) noexcept
     {
-        auto result = function_traits<typename type_traits<R>::jvalue_type>::call_non_virtual_method(env(), get(obj), get_class<JCls>(), id, type_traits<Args>::j_cast(args)...);
+        auto result = function_traits<typename type_traits<R>::jvalue_type>::call_non_virtual_method(env(), get(obj), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
         return type_traits<R>::c_cast(result);
     }
 
     jmethodID id{};
 };
-template <typename JCls, typename Fun> non_virtual_method<JCls, Fun> make_non_virtual_method(const char* name) noexcept
+template <typename JType, typename Fun> non_virtual_method<JType, Fun> make_non_virtual_method(const char* name) noexcept
 {
-    return non_virtual_method<JCls, Fun>{ get_method_id<JCls, Fun>(name) };
+    return non_virtual_method<JType, Fun>{ get_method_id<JType, Fun>(name) };
 }
 
 //*************************************************************************************************
@@ -789,30 +799,30 @@ template <typename JCls, typename Fun> non_virtual_method<JCls, Fun> make_non_vi
 //*************************************************************************************************
 
 template <typename...> struct static_method;
-template <typename JCls, typename... Args> struct static_method<JCls, void(Args...)> 
+template <typename JType, typename... Args> struct static_method<JType, void(Args...)> 
 {
     void operator()(const Args&... args) noexcept
     {
-        function_traits<void>::call_static_method(env(), get_class<JCls>(), id, type_traits<Args>::j_cast(args)...);
+        function_traits<void>::call_static_method(env(), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
     }
 
     jmethodID id{};
 };
-template <typename JCls, typename R, typename... Args> struct static_method<JCls, R(Args...)>
+template <typename JType, typename R, typename... Args> struct static_method<JType, R(Args...)>
 {
     decltype(auto) operator()(const Args&... args) noexcept
     {
-        auto result = function_traits<typename type_traits<R>::jvalue_type>::call_static_method(env(), get_class<JCls>(), id, type_traits<Args>::j_cast(args)...);
+        auto result = function_traits<typename type_traits<R>::jvalue_type>::call_static_method(env(), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
         return type_traits<R>::c_cast(result);
     }
 
     jmethodID id{};
 };
-template <typename JCls, typename Fun> static_method<JCls, Fun> make_static_method(const char* name) noexcept
+template <typename JType, typename Fun> static_method<JType, Fun> make_static_method(const char* name) noexcept
 {
-    return static_method<JCls, Fun>{ get_static_method_id<JCls, Fun>(name) };
+    return static_method<JType, Fun>{ get_static_method_id<JType, Fun>(name) };
 }
 
 
@@ -821,17 +831,17 @@ template <typename JCls, typename Fun> static_method<JCls, Fun> make_static_meth
 //*************************************************************************************************
 
 template <typename...> struct constructor;
-template <typename JCls, typename... Args> struct constructor<JCls(Args...)> 
+template <typename JType, typename... Args> struct constructor<JType(Args...)> 
 {
     static jmethodID get_id() noexcept
     {
-        return get_method_id<JCls, void(Args...)>("<init>");
+        return get_method_id<JType, void(Args...)>("<init>");
     }
-    local_ref<JCls> operator()(const Args&... args) noexcept
+    local_ref<JType> operator()(const Args&... args) noexcept
     {
-        auto result = env()->NewObject(get_class<JCls>(), id, type_traits<Args>::j_cast(args)...);
+        auto result = env()->NewObject(get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
-        return make_local(static_cast<JCls>(result));
+        return make_local(static_cast<JType>(result));
     }
 
     jmethodID id{};
