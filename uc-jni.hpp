@@ -419,7 +419,7 @@ template <typename Traits> const typename Traits::value_type* end(const array_el
     return elems.get() + length(elems.get_deleter().array);
 }
 
-
+#if 0
 template <typename T, std::enable_if_t<is_base_ptr_of<jobject, T>::value, std::nullptr_t> = nullptr>
 class array
 {
@@ -450,7 +450,7 @@ public:
 private:
     global_ref<jobjectArray> impl;
 };
-
+#endif
 
 
 //*************************************************************************************************
@@ -591,6 +591,7 @@ template<> struct type_traits<const char16_t*>
     static jstring j_cast(const char16_t* v) { return to_jstring(v).release(); }
     static constexpr decltype(auto) signature() noexcept { return type_traits<jstring>::signature(); }
 };
+#if 0
 template <typename T> struct type_traits<array<T>>
 {
     using jvalue_type = jobjectArray;
@@ -599,7 +600,7 @@ template <typename T> struct type_traits<array<T>>
     static jobjectArray j_cast(const array<T>& v) { return v.get(); }
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(type_traits<T>::signature()); }
 };
-
+#endif
 template <> struct type_traits<std::vector<bool>>
 {
     using jvalue_type = jbooleanArray;
