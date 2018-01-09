@@ -26,15 +26,13 @@ uc::jni::static_method<System, void()> gc{};
 uc::jni::static_method<Log, int(std::string, jstring)> logd{};
 uc::jni::method<jstring, int(jstring)> compareJStrings{};
 
-using namespace uc;
+STATIC_ASSERT(sizeof(uc::jni::field<System, int>) == sizeof(jfieldID));
+STATIC_ASSERT(sizeof(uc::jni::static_field<System, int>) == sizeof(jfieldID));
 
-STATIC_ASSERT(sizeof(jni::field<System, int>) == sizeof(jfieldID));
-STATIC_ASSERT(sizeof(jni::static_field<System, int>) == sizeof(jfieldID));
-
-STATIC_ASSERT(sizeof(jni::method<System, void()>) == sizeof(jmethodID));
-STATIC_ASSERT(sizeof(jni::non_virtual_method<System, void()>) == sizeof(jmethodID));
-STATIC_ASSERT(sizeof(jni::static_method<System, void()>) == sizeof(jmethodID));
-STATIC_ASSERT(sizeof(jni::constructor<UcJniTest()>) == sizeof(jmethodID));
+STATIC_ASSERT(sizeof(uc::jni::method<System, void()>) == sizeof(jmethodID));
+STATIC_ASSERT(sizeof(uc::jni::non_virtual_method<System, void()>) == sizeof(jmethodID));
+STATIC_ASSERT(sizeof(uc::jni::static_method<System, void()>) == sizeof(jmethodID));
+STATIC_ASSERT(sizeof(uc::jni::constructor<UcJniTest()>) == sizeof(jmethodID));
 
 
 jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
@@ -54,14 +52,14 @@ JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
 
         DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
-        auto makePoint = jni::make_constructor<Point(int,int)>();
+        auto makePoint = uc::jni::make_constructor<Point(int,int)>();
 
-        auto x = jni::make_field<Point, int>("x");
-        auto y = jni::make_field<Point, int>("y");
+        auto x = uc::jni::make_field<Point, int>("x");
+        auto y = uc::jni::make_field<Point, int>("y");
 
-        auto toString = jni::make_method<jobject, std::string()>("toString");
-        auto equals = jni::make_method<jobject, bool(jobject)>("equals");
-        auto offset = jni::make_method<Point, void(int,int)>("offset");
+        auto toString = uc::jni::make_method<jobject, std::string()>("toString");
+        auto equals = uc::jni::make_method<jobject, bool(jobject)>("equals");
+        auto offset = uc::jni::make_method<Point, void(int,int)>("offset");
 
         // Accessors do not use any extra memory.
         TEST_ASSERT_EQUALS(sizeof(makePoint), sizeof(jmethodID));
@@ -114,14 +112,47 @@ JNI(void, testGlobalRef)(JNIEnv *env, jobject thiz)
 JNI(void, testWeakRef)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
-        TEST_ASSERT(globalString);
-        weakString = uc::jni::weak_ref<jstring>(globalString);
 
+        TEST_ASSERT(globalString);
+
+
+        auto jstr = uc::jni::to_jstring("Hello World");
+
+        weakString = uc::jni::weak_ref<jstring>(jstr);
+        TEST_ASSERT(weakString.is_same(jstr));
+        TEST_ASSERT(!weakString.is_same(globalString));
+        TEST_ASSERT(!weakString.expired());
+        {
+            auto jstr2 = weakString.lock();
+            TEST_ASSERT(weakString.is_same(jstr2));
+            TEST_ASSERT(uc::jni::is_same_object(jstr, jstr2));
+        }
+
+        weakString.reset();
+        TEST_ASSERT(!weakString.is_same(jstr));
+        TEST_ASSERT(!weakString.is_same(globalString));
+        TEST_ASSERT(weakString.expired());
+
+
+        weakString = uc::jni::weak_ref<jstring>(jstr);
+        TEST_ASSERT(weakString.is_same(jstr));
+        TEST_ASSERT(!weakString.is_same(globalString));
+        TEST_ASSERT(!weakString.expired());
+        {
+            auto jstr2 = weakString.lock();
+            TEST_ASSERT(weakString.is_same(jstr2));
+            TEST_ASSERT(uc::jni::is_same_object(jstr, jstr2));
+        }
+
+
+        weakString = globalString;
+        TEST_ASSERT(!weakString.is_same(jstr));
         TEST_ASSERT(weakString.is_same(globalString));
         TEST_ASSERT(!weakString.expired());
         {
-            auto str2 = weakString.lock();
-            TEST_ASSERT(weakString.is_same(str2));
+            auto jstr2 = weakString.lock();
+            TEST_ASSERT(weakString.is_same(jstr2));
+            TEST_ASSERT(uc::jni::is_same_object(globalString, jstr2));
         }
 
         globalString.reset();
@@ -138,30 +169,30 @@ JNI(void, testWeakRef)(JNIEnv *env, jobject thiz)
 
 JNI(void, testIsInstanceOf)(JNIEnv *env, jobject thiz)
 {
-    jni::exception_guard([&] {
-        TEST_ASSERT(jni::is_instance_of<jobject>(thiz));
-        TEST_ASSERT(jni::is_instance_of<UcJniTest>(thiz));
-        TEST_ASSERT(!jni::is_instance_of<jstring>(thiz));
+    uc::jni::exception_guard([&] {
+        TEST_ASSERT(uc::jni::is_instance_of<jobject>(thiz));
+        TEST_ASSERT(uc::jni::is_instance_of<UcJniTest>(thiz));
+        TEST_ASSERT(!uc::jni::is_instance_of<jstring>(thiz));
 
         auto str = uc::jni::to_jstring("Hello World");
-        TEST_ASSERT(jni::is_instance_of<jobject>(str));
-        TEST_ASSERT(!jni::is_instance_of<UcJniTest>(str));
-        TEST_ASSERT(jni::is_instance_of<jstring>(str));
+        TEST_ASSERT(uc::jni::is_instance_of<jobject>(str));
+        TEST_ASSERT(!uc::jni::is_instance_of<UcJniTest>(str));
+        TEST_ASSERT(uc::jni::is_instance_of<jstring>(str));
     });
 }
 
 JNI(void, testToJstring)(JNIEnv *env, jobject thiz)
 {
-    jni::exception_guard([&] {
+    uc::jni::exception_guard([&] {
         {
             auto field = uc::jni::make_static_field<UcJniTest, jstring>("staticFieldString");
-            auto str = jni::to_jstring("Hello World!");
+            auto str = uc::jni::to_jstring("Hello World!");
             logd(__func__, str.get());
             TEST_ASSERT(compareJStrings(str, field.get().get()) == 0);
         }
         {
             auto field = uc::jni::make_static_field<UcJniTest, jstring>("staticFieldStringJp");
-            auto str = jni::to_jstring(u"こんにちは、世界！");
+            auto str = uc::jni::to_jstring(u"こんにちは、世界！");
             logd(__func__, str.get());
             TEST_ASSERT(compareJStrings(str, field.get().get()) == 0);
         }
@@ -169,24 +200,37 @@ JNI(void, testToJstring)(JNIEnv *env, jobject thiz)
 }
 JNI(void, testToString)(JNIEnv *env, jobject thiz)
 {
-    jni::exception_guard([&] {
+    uc::jni::exception_guard([&] {
+        const std::string value = "Hello World!";
+        const std::u16string valueJp = u"こんにちは、世界！";
+
         {
             auto field = uc::jni::make_static_field<UcJniTest, jstring>("staticFieldString");
-            auto str = jni::to_string(field.get());
-            TEST_ASSERT(str == "Hello World!");
+            auto str = uc::jni::to_string(field.get());
+            TEST_ASSERT_EQUALS(value, str);
         }
         {
             auto field = uc::jni::make_static_field<UcJniTest, std::string>("staticFieldString");
-            TEST_ASSERT(field.get() == "Hello World!");
+            TEST_ASSERT_EQUALS(value, field.get());
         }
         {
             auto field = uc::jni::make_static_field<UcJniTest, jstring>("staticFieldStringJp");
-            auto str = jni::to_u16string(field.get());
-            TEST_ASSERT(str == u"こんにちは、世界！");
+            auto str = uc::jni::to_u16string(field.get());
+            TEST_ASSERT_EQUALS(valueJp, str);
         }
         {
             auto field = uc::jni::make_static_field<UcJniTest, std::u16string>("staticFieldStringJp");
-            TEST_ASSERT(field.get() == u"こんにちは、世界！");
+            TEST_ASSERT_EQUALS(valueJp, field.get());
+        }
+        {
+            auto jstr = uc::jni::to_jstring(value);
+            auto str = uc::jni::to_string(jstr);
+            TEST_ASSERT_EQUALS(value, str);
+        }
+        {
+            auto jstr = uc::jni::to_jstring(valueJp);
+            auto str = uc::jni::to_u16string(jstr);
+            TEST_ASSERT_EQUALS(valueJp, str);
         }
     });
 }
@@ -194,75 +238,75 @@ JNI(void, testToString)(JNIEnv *env, jobject thiz)
 
 JNI(void, testTypeTraitsSignature)(JNIEnv *env, jobject thiz)
 {
-    jni::exception_guard([&] {
-        TEST_ASSERT_EQUALS(std::string("V"), jni::type_traits<void>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("Z"), jni::type_traits<jboolean>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("B"), jni::type_traits<jbyte>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("C"), jni::type_traits<jchar>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("S"), jni::type_traits<jshort>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("I"), jni::type_traits<jint>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("J"), jni::type_traits<jlong>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("D"), jni::type_traits<jdouble>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("F"), jni::type_traits<jfloat>::signature().c_str());
+    uc::jni::exception_guard([&] {
+        TEST_ASSERT_EQUALS(std::string("V"), uc::jni::type_traits<void>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("Z"), uc::jni::type_traits<jboolean>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("B"), uc::jni::type_traits<jbyte>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("C"), uc::jni::type_traits<jchar>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("S"), uc::jni::type_traits<jshort>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("I"), uc::jni::type_traits<jint>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("J"), uc::jni::type_traits<jlong>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("D"), uc::jni::type_traits<jdouble>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("F"), uc::jni::type_traits<jfloat>::signature().c_str());
 
-        TEST_ASSERT_EQUALS(std::string("Ljava/lang/Object;"), jni::type_traits<jobject>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("Ljava/lang/String;"), jni::type_traits<jstring>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("Lcom/example/uc/ucjnitest/UcJniTest;"), jni::type_traits<UcJniTest>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("Ljava/lang/Object;"), uc::jni::type_traits<jobject>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("Ljava/lang/String;"), uc::jni::type_traits<jstring>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("Lcom/example/uc/ucjnitest/UcJniTest;"), uc::jni::type_traits<UcJniTest>::signature().c_str());
 
-        TEST_ASSERT_EQUALS(std::string("[Z"), jni::type_traits<jbooleanArray>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[B"), jni::type_traits<jbyteArray>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[C"), jni::type_traits<jcharArray>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[S"), jni::type_traits<jshortArray>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[I"), jni::type_traits<jintArray>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[J"), jni::type_traits<jlongArray>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[D"), jni::type_traits<jdoubleArray>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[F"), jni::type_traits<jfloatArray>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/Object;"), jni::type_traits<jobjectArray>::signature().c_str());
-
-
-        TEST_ASSERT_EQUALS(std::string("Z"), jni::type_traits<bool>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("B"), jni::type_traits<char>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("C"), jni::type_traits<char16_t>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("Ljava/lang/String;"), jni::type_traits<std::string>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("Ljava/lang/String;"), jni::type_traits<std::u16string>::signature().c_str());
-
-        TEST_ASSERT_EQUALS(std::string("[Z"), jni::type_traits<std::vector<jboolean>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[B"), jni::type_traits<std::vector<jbyte>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[C"), jni::type_traits<std::vector<jchar>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[S"), jni::type_traits<std::vector<jshort>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[I"), jni::type_traits<std::vector<jint>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[J"), jni::type_traits<std::vector<jlong>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[D"), jni::type_traits<std::vector<jdouble>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[F"), jni::type_traits<std::vector<jfloat>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/Object;"), jni::type_traits<std::vector<jobject>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/String;"), jni::type_traits<std::vector<jstring>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[Lcom/example/uc/ucjnitest/UcJniTest;"), jni::type_traits<std::vector<UcJniTest>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[Z"), uc::jni::type_traits<jbooleanArray>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[B"), uc::jni::type_traits<jbyteArray>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[C"), uc::jni::type_traits<jcharArray>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[S"), uc::jni::type_traits<jshortArray>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[I"), uc::jni::type_traits<jintArray>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[J"), uc::jni::type_traits<jlongArray>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[D"), uc::jni::type_traits<jdoubleArray>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[F"), uc::jni::type_traits<jfloatArray>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/Object;"), uc::jni::type_traits<jobjectArray>::signature().c_str());
 
 
-        TEST_ASSERT_EQUALS(std::string("()V"), jni::type_traits<void()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()Z"), jni::type_traits<jboolean()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()B"), jni::type_traits<jbyte()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()C"), jni::type_traits<jchar()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()S"), jni::type_traits<jshort()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()I"), jni::type_traits<jint()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()J"), jni::type_traits<jlong()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()D"), jni::type_traits<jdouble()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()F"), jni::type_traits<jfloat()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()Ljava/lang/Object;"), jni::type_traits<jobject()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()Ljava/lang/String;"), jni::type_traits<jstring()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()Lcom/example/uc/ucjnitest/UcJniTest;"), jni::type_traits<UcJniTest()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()[Z"), jni::type_traits<jbooleanArray()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()[B"), jni::type_traits<jbyteArray()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()[C"), jni::type_traits<jcharArray()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()[S"), jni::type_traits<jshortArray()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()[I"), jni::type_traits<jintArray()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()[J"), jni::type_traits<jlongArray()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()[D"), jni::type_traits<jdoubleArray()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()[F"), jni::type_traits<jfloatArray()>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("()[Ljava/lang/Object;"), jni::type_traits<jobjectArray()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("Z"), uc::jni::type_traits<bool>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("B"), uc::jni::type_traits<char>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("C"), uc::jni::type_traits<char16_t>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("Ljava/lang/String;"), uc::jni::type_traits<std::string>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("Ljava/lang/String;"), uc::jni::type_traits<std::u16string>::signature().c_str());
 
-        TEST_ASSERT_EQUALS(std::string("(ZBCSIJLjava/lang/String;DF)V"), jni::type_traits<void(jboolean,jbyte,jchar,jshort,jint,jlong,jstring,jdouble,jfloat)>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("([Ljava/lang/Object;[Z[B[C[S[I[J[D[F)Ljava/lang/String;"), jni::type_traits<jstring(jobjectArray,jbooleanArray,jbyteArray,jcharArray,jshortArray,jintArray,jlongArray,jdoubleArray,jfloatArray)>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[Z"), uc::jni::type_traits<std::vector<jboolean>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[B"), uc::jni::type_traits<std::vector<jbyte>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[C"), uc::jni::type_traits<std::vector<jchar>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[S"), uc::jni::type_traits<std::vector<jshort>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[I"), uc::jni::type_traits<std::vector<jint>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[J"), uc::jni::type_traits<std::vector<jlong>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[D"), uc::jni::type_traits<std::vector<jdouble>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[F"), uc::jni::type_traits<std::vector<jfloat>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/Object;"), uc::jni::type_traits<std::vector<jobject>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/String;"), uc::jni::type_traits<std::vector<jstring>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[Lcom/example/uc/ucjnitest/UcJniTest;"), uc::jni::type_traits<std::vector<UcJniTest>>::signature().c_str());
+
+
+        TEST_ASSERT_EQUALS(std::string("()V"), uc::jni::type_traits<void()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()Z"), uc::jni::type_traits<jboolean()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()B"), uc::jni::type_traits<jbyte()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()C"), uc::jni::type_traits<jchar()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()S"), uc::jni::type_traits<jshort()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()I"), uc::jni::type_traits<jint()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()J"), uc::jni::type_traits<jlong()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()D"), uc::jni::type_traits<jdouble()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()F"), uc::jni::type_traits<jfloat()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()Ljava/lang/Object;"), uc::jni::type_traits<jobject()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()Ljava/lang/String;"), uc::jni::type_traits<jstring()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()Lcom/example/uc/ucjnitest/UcJniTest;"), uc::jni::type_traits<UcJniTest()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()[Z"), uc::jni::type_traits<jbooleanArray()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()[B"), uc::jni::type_traits<jbyteArray()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()[C"), uc::jni::type_traits<jcharArray()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()[S"), uc::jni::type_traits<jshortArray()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()[I"), uc::jni::type_traits<jintArray()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()[J"), uc::jni::type_traits<jlongArray()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()[D"), uc::jni::type_traits<jdoubleArray()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()[F"), uc::jni::type_traits<jfloatArray()>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("()[Ljava/lang/Object;"), uc::jni::type_traits<jobjectArray()>::signature().c_str());
+
+        TEST_ASSERT_EQUALS(std::string("(ZBCSIJLjava/lang/String;DF)V"), uc::jni::type_traits<void(jboolean,jbyte,jchar,jshort,jint,jlong,jstring,jdouble,jfloat)>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("([Ljava/lang/Object;[Z[B[C[S[I[J[D[F)Ljava/lang/String;"), uc::jni::type_traits<jstring(jobjectArray,jbooleanArray,jbyteArray,jcharArray,jshortArray,jintArray,jlongArray,jdoubleArray,jfloatArray)>::signature().c_str());
     });
 }
 
@@ -337,19 +381,19 @@ template<typename T> void testMethod(const char* fieldName,
 #define DEFINE_FIELD_AND_METHOD_TEST(type, methodType, value1, value2) \
 JNI(void, testStaticField ## methodType)(JNIEnv *env, jobject thiz)\
 {\
-    jni::exception_guard([&] { testStaticField<type>( "staticField" #methodType, value1, value2); });\
+    uc::jni::exception_guard([&] { testStaticField<type>( "staticField" #methodType, value1, value2); });\
 }\
 JNI(void, testField ## methodType)(JNIEnv *env, jobject thiz)\
 {\
-    jni::exception_guard([&] { testField<type>( "field" #methodType, thiz, value1, value2); });\
+    uc::jni::exception_guard([&] { testField<type>( "field" #methodType, thiz, value1, value2); });\
 }\
 JNI(void, testStaticMethod ## methodType)(JNIEnv *env, jobject thiz)\
 {\
-    jni::exception_guard([&] { testStaticMethod<type>( "staticField" #methodType, "setStaticField" #methodType, "getStaticField" #methodType, value1, value2); });\
+    uc::jni::exception_guard([&] { testStaticMethod<type>( "staticField" #methodType, "setStaticField" #methodType, "getStaticField" #methodType, value1, value2); });\
 }\
 JNI(void, testMethod ## methodType)(JNIEnv *env, jobject thiz)\
 {\
-    jni::exception_guard([&] { testMethod<type>( "field" #methodType, "setField" #methodType, "getField" #methodType, thiz, value1, value2); });\
+    uc::jni::exception_guard([&] { testMethod<type>( "field" #methodType, "setField" #methodType, "getField" #methodType, thiz, value1, value2); });\
 }
 DEFINE_FIELD_AND_METHOD_TEST(bool,           Bool,     false, true)
 DEFINE_FIELD_AND_METHOD_TEST(jbyte,          Byte,     0xff, 0xcc)
@@ -363,15 +407,15 @@ DEFINE_FIELD_AND_METHOD_TEST(std::u16string, StringJp,  u"こんにちは、世�
 
 JNI(void, testArrayField)(JNIEnv *env, jobject thiz)
 {
-    jni::exception_guard([&] {
+    uc::jni::exception_guard([&] {
         {
             const auto answer = std::vector<int> {1, 2, 3, 4, 5};
             {
                 auto field = uc::jni::make_static_field<UcJniTest, jintArray>("staticFieldIntArray");
                 auto array = field.get();
-                TEST_ASSERT_EQUALS(answer.size(), jni::length(array));
+                TEST_ASSERT_EQUALS(answer.size(), uc::jni::length(array));
                 int i = 0;
-                for (auto&& v : jni::get_elements(array)) {
+                for (auto&& v : uc::jni::get_elements(array)) {
                     TEST_ASSERT_EQUALS(answer[i], v);
                     ++i;
                 }
@@ -388,9 +432,9 @@ JNI(void, testArrayField)(JNIEnv *env, jobject thiz)
             {
                 auto field = uc::jni::make_static_field<UcJniTest,jcharArray>("staticFieldCharArray");
                 auto array = field.get();
-                TEST_ASSERT_EQUALS(answer.size(), jni::length(array));
+                TEST_ASSERT_EQUALS(answer.size(), uc::jni::length(array));
                 int i = 0;
-                for (auto&& v : jni::get_elements(array)) {
+                for (auto&& v : uc::jni::get_elements(array)) {
                     TEST_ASSERT_EQUALS(answer[i], v);
                     ++i;
                 }
@@ -420,7 +464,7 @@ JNI(void, testArrayField)(JNIEnv *env, jobject thiz)
             auto field = uc::jni::make_field<UcJniTest, std::vector<jstring>>("fieldStringArray");
             auto fieldValues = field.get(thiz);
             std::vector<std::u16string> values(fieldValues.size());
-            std::transform(fieldValues.begin(), fieldValues.end(), values.begin(), [](auto&& v) { return jni::to_u16string(v); });
+            std::transform(fieldValues.begin(), fieldValues.end(), values.begin(), [](auto&& v) { return uc::jni::to_u16string(v); });
             const auto answer = std::vector<std::u16string> { u"Hello", u"World!", u"こんにちは", u"世界" };
             TEST_ASSERT_EQUALS(answer, values);
         }
@@ -434,43 +478,43 @@ JNI(void, testArrayField)(JNIEnv *env, jobject thiz)
 
 JNI(void, testArray)(JNIEnv *env, jobject thiz)
 {
-    jni::exception_guard([&] {
-        auto array = jni::new_array<jint>(10);
+    uc::jni::exception_guard([&] {
+        auto array = uc::jni::new_array<jint>(10);
 
-        TEST_ASSERT_EQUALS(10, jni::length(array));
+        TEST_ASSERT_EQUALS(10, uc::jni::length(array));
 
         const int values1[] = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19};
         const int values2[] = {20, 21, 22, 23, 24, 25, 26, 27, 28, 29};
 
         {
-            auto elems = jni::get_elements(array.get());
-            std::copy(std::begin(values1), std::end(values1), jni::begin(elems));
+            auto elems = uc::jni::get_elements(array.get());
+            std::copy(std::begin(values1), std::end(values1), uc::jni::begin(elems));
 
-            TEST_ASSERT(!std::equal(std::begin(values1), std::end(values1), jni::begin(jni::get_elements(array.get()))));
+            TEST_ASSERT(!std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
         }
-        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), jni::begin(jni::get_elements(array.get()))));
+        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
 
         {
-            auto elems = jni::get_elements(array);
-            std::copy(std::begin(values2), std::end(values2), jni::begin(elems));
-            jni::set_abort(elems);
+            auto elems = uc::jni::get_elements(array);
+            std::copy(std::begin(values2), std::end(values2), uc::jni::begin(elems));
+            uc::jni::set_abort(elems);
         }
-        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), jni::begin(jni::get_elements(array.get()))));
+        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
 
         {
-            auto elems = jni::get_elements(array, true);
-            std::copy(std::begin(values2), std::end(values2), jni::begin(elems));
+            auto elems = uc::jni::get_elements(array, true);
+            std::copy(std::begin(values2), std::end(values2), uc::jni::begin(elems));
         }
-        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), jni::begin(jni::get_elements(array.get()))));
+        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
 
 
         {
-            auto elems = jni::get_elements(array);
-            std::copy(std::begin(values2), std::end(values2), jni::begin(elems));
+            auto elems = uc::jni::get_elements(array);
+            std::copy(std::begin(values2), std::end(values2), uc::jni::begin(elems));
 
-            TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), jni::begin(jni::get_elements(array.get()))));
-            jni::commit(elems);
-            TEST_ASSERT(std::equal(std::begin(values2), std::end(values2), jni::begin(jni::get_elements(array.get()))));
+            TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
+            uc::jni::commit(elems);
+            TEST_ASSERT(std::equal(std::begin(values2), std::end(values2), uc::jni::begin(uc::jni::get_elements(array.get()))));
         }
     });
 LOGD << "###############################################";

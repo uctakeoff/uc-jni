@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "0.1.1"
-#define UC_JNI_VERSION_NUM 0x000101
+#define UC_JNI_VERSION "0.1.2"
+#define UC_JNI_VERSION_NUM 0x000102
 
 #include <jni.h>
 #include <memory>
@@ -104,10 +104,20 @@ template <typename JObj> class weak_ref
 {
 public:
     weak_ref() = default;
+    weak_ref(const weak_ref&) = default;
+    weak_ref& operator=(const weak_ref&) = default;
 
-    template <typename T> weak_ref(const T& obj)
-        : impl(static_cast<JObj>(env()->NewWeakGlobalRef(get(obj))), [](JObj p) { env()->DeleteWeakGlobalRef(p); })
+    template <typename T, native_ref<T> = nullptr> weak_ref(const T& obj) : impl(make_weak(obj))
     {
+    }
+    template <typename T, native_ref<T> = nullptr> weak_ref& operator=(const T& obj)
+    {
+        impl = make_weak(obj);
+        return *this;
+    }
+    void reset() noexcept
+    {
+        impl.reset();
     }
     local_ref<JObj> lock() const
     {
@@ -123,7 +133,13 @@ public:
     }
 
 private:
-    std::shared_ptr<std::remove_pointer_t<jweak>> impl;
+    using impl_type = std::shared_ptr<std::remove_pointer_t<jweak>>;
+    template <typename T> static impl_type make_weak(const T& obj)
+    {
+        return impl_type(static_cast<JObj>(env()->NewWeakGlobalRef(get(obj))), [](JObj p) { env()->DeleteWeakGlobalRef(p); });
+    }
+
+    impl_type impl;
 };
 
 
@@ -263,7 +279,11 @@ template <typename T, typename Traits = string_traits<T>> local_ref<jstring> to_
 
 template <typename T, typename JStr, typename Traits = string_traits<T>> std::basic_string<T> to_basic_string(const JStr& str)
 {
-    return std::basic_string<T>(get_chars<T,Traits>(get(str)).get(), Traits::length(env(), get(str)));
+    // return std::basic_string<T>(get_chars<T,Traits>(get(str)).get(), Traits::length(env(), get(str)));
+    const auto len = Traits::length(env(), get(str));
+    std::basic_string<T> ret(len, 0);
+    Traits::get_region(env(), get(str), 0, len, &ret[0]);
+    return  ret;
 }
 template <typename JStr> std::string to_string(const JStr& str)
 {

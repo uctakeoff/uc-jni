@@ -83,3 +83,124 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
     }
 }
 ```
+
+# Detail
+
+## JNIEnv
+
+`JNIEnv* uc::jni::env()` works correctly from any thread call.
+AttachCurrentThread (), DetachCurrentThread () are unnecessary because they are called at an appropriate timing.
+
+```cpp
+    std::thread t([thiz]{
+
+        // This is a safe call.
+        jclass cls = uc::jni::env()->GetObjectClass(thiz);
+
+        :
+
+        env->DeleteLocalRef(cls);
+    });
+```
+
+
+## References
+
+`uc::jni::local_ref<T>` is an alias for `std::unique_ptr<T,>`.
+
+`uc::jni::global_ref<T>` is an alias for `std::shared_ptr<T,>`.
+
+`uc::jni::weak_ref<T>` can be handled like `std::weak_ptr<T,>`.
+
+```cpp
+    // Call DeleteLocalRef() automatically.
+    uc::jni::local_ref<jclass> cls = jni::make_local(env->GetObjectClass(thiz));
+
+    // Call DeleteGlobalRef() automatically.
+    uc::jni::global_ref<jclass> gcls = jni::make_global(cls);
+
+    // Call DeleteWeakGlobalRef() automatically.
+    uc::jni::weak_ref<jclass>  wcls = gcls;
+
+    uc::jni::local_ref<jclass> tmp = wcls.lock();
+    if (tmp) {
+        :
+        :
+    }
+
+```
+
+## Resolve Classes
+
+
+It is not bad.
+
+```cpp
+    auto cls = uc::jni::find_class("java/lang/RuntimeException");
+```
+
+Recommended.
+```cpp
+    DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
+
+    // jclass instance is cached. Must not release it.
+    jclass cls = uc::jni::get_class<RuntimeException>();
+```
+
+
+## Convert Strings
+
+```cpp
+
+    // decltype(jstr) == uc::jni::local_ref<jstring>
+    auto jstr = uc::jni::to_jstring("Hello World!");
+
+    std::string str = uc::jni::to_string(jstr);
+```
+
+### Support C++11 UTF-16 string
+
+```cpp
+    auto jstr = uc::jni::to_jstring(u"こんにちは、世界！"); // japanese
+
+    std::u16string str = uc::jni::to_u16string(jstr);
+```
+
+
+## Method ID, Field ID
+
+You have been freed from tedious ["type signatures"](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/types.html#type_signatures).
+
+```cpp
+    DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+
+    jfieldID fieldId = uc::jni::get_field_id<Point, int>("x");
+
+
+    DEFINE_JCLASS_ALIAS(System, java/lang/System);
+
+    jmethodID methodId = uc::jni::get_static_method_id<System, void()>("gc");
+```
+
+The following "function object" which is more convenient is recommended.
+
+```cpp
+    DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+
+    Point point = ...;
+
+    auto x = jni::make_field<Point, int>("x");  // Point.x
+
+    // valueX = point.x;
+    int valueX = x.get(point);
+
+    // point.x = 100;
+    x.set(point, 100);
+
+
+    auto gc = uc::jni::make_static_method<System, void()>("gc");
+
+    // System.gc();
+    gc();
+
+``
