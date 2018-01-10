@@ -89,7 +89,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 ## JNIEnv
 
 `JNIEnv* uc::jni::env()` works correctly from any thread call.
-AttachCurrentThread (), DetachCurrentThread () are unnecessary because they are called at an appropriate timing.
+[`AttachCurrentThread()`](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#AttachCurrentThread), [`DetachCurrentThread()`](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#DetachCurrentThread) are unnecessary because they are called at an appropriate timing.
 
 ```cpp
     std::thread t([thiz]{
@@ -113,13 +113,13 @@ AttachCurrentThread (), DetachCurrentThread () are unnecessary because they are 
 `uc::jni::weak_ref<T>` can be handled like `std::weak_ptr<T,>`.
 
 ```cpp
-    // Call DeleteLocalRef() automatically.
+    // DeleteLocalRef() is called automatically.
     uc::jni::local_ref<jclass> cls = jni::make_local(env->GetObjectClass(thiz));
 
-    // Call DeleteGlobalRef() automatically.
+    // DeleteGlobalRef() is called automatically.
     uc::jni::global_ref<jclass> gcls = jni::make_global(cls);
 
-    // Call DeleteWeakGlobalRef() automatically.
+    // DeleteWeakGlobalRef() is called automatically.
     uc::jni::weak_ref<jclass>  wcls = gcls;
 
     uc::jni::local_ref<jclass> tmp = wcls.lock();
