@@ -15,6 +15,8 @@
 #define TEST_ASSERT_EQUALS(expected, actual) TEST_ASSERT(expected == actual)
 #define TEST_ASSERT_NOT_EQUALS(unexpected, actual) TEST_ASSERT(unexpected != actual)
 #define STATIC_ASSERT(pred) static_assert(pred, #pred)
+#define STATIC_ASSERT_EQUALS(expected, actual) STATIC_ASSERT(expected == actual)
+#define STATIC_ASSERT_NOT_EQUALS(unexpected, actual) STATIC_ASSERT(unexpected != actual)
 
 
 
@@ -22,18 +24,19 @@ DEFINE_JCLASS_ALIAS(System, java/lang/System);
 DEFINE_JCLASS_ALIAS(Log, android/util/Log);
 DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
 
+STATIC_ASSERT_EQUALS(sizeof(uc::jni::field<System, int>), sizeof(jfieldID));
+STATIC_ASSERT_EQUALS(sizeof(uc::jni::static_field<System, int>), sizeof(jfieldID));
+
+STATIC_ASSERT_EQUALS(sizeof(uc::jni::method<System, void()>), sizeof(jmethodID));
+STATIC_ASSERT_EQUALS(sizeof(uc::jni::non_virtual_method<System, void()>), sizeof(jmethodID));
+STATIC_ASSERT_EQUALS(sizeof(uc::jni::static_method<System, void()>), sizeof(jmethodID));
+STATIC_ASSERT_EQUALS(sizeof(uc::jni::constructor<UcJniTest()>), sizeof(jmethodID));
+
+
 uc::jni::static_method<System, void()> gc{};
 uc::jni::static_method<Log, int(std::string, jstring)> logd{};
 uc::jni::method<jstring, int(jstring)> compareJStrings{};
-
-STATIC_ASSERT(sizeof(uc::jni::field<System, int>) == sizeof(jfieldID));
-STATIC_ASSERT(sizeof(uc::jni::static_field<System, int>) == sizeof(jfieldID));
-
-STATIC_ASSERT(sizeof(uc::jni::method<System, void()>) == sizeof(jmethodID));
-STATIC_ASSERT(sizeof(uc::jni::non_virtual_method<System, void()>) == sizeof(jmethodID));
-STATIC_ASSERT(sizeof(uc::jni::static_method<System, void()>) == sizeof(jmethodID));
-STATIC_ASSERT(sizeof(uc::jni::constructor<UcJniTest()>) == sizeof(jmethodID));
-
+uc::jni::method<jclass, std::string()> getClassName{};
 
 jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 {
@@ -42,7 +45,8 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
     gc = uc::jni::make_static_method<System, void()>("gc");
     logd = uc::jni::make_static_method<Log, int(std::string, jstring)>("d");
     compareJStrings = uc::jni::make_method<jstring, int(jstring)>("compareTo");
-    
+    getClassName = uc::jni::make_method<jclass, std::string()>("getName");
+
     return JNI_VERSION_1_6;
 }
 
@@ -70,6 +74,12 @@ JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
         auto p0 = makePoint(12, 34);
         auto p1 = makePoint(12, 34);
         auto p2 = makePoint(123, 456);
+
+        LOGD << "#########################################";
+//        LOGD << "####" << getClassName(p0);
+        LOGD << "####" << getClassName(uc::jni::get_object_class(p0));
+        TEST_ASSERT_EQUALS(std::string(Point_impl::fqcn()), "android/graphics/Point");
+        TEST_ASSERT_EQUALS(getClassName(uc::jni::get_object_class(p0)), "android.graphics.Point");
 
         LOGD << toString(p0) << ", " << toString(p1) << ", " << toString(p2);
 
@@ -235,6 +245,90 @@ JNI(void, testToString)(JNIEnv *env, jobject thiz)
     });
 }
 
+// test cexprstr
+
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr(""), uc::jni::make_cexprstr(""));
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("a"), uc::jni::make_cexprstr("a"));
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("ABCDE"), uc::jni::make_cexprstr("ABCDE"));
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("ABCDE").append("FGHIJ"), uc::jni::make_cexprstr("ABCDE").append("FGHIJ"));
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("ABC").append("DEFGHIJ"), uc::jni::make_cexprstr("ABCDEFG").append("HIJ"));
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("").append("ABCDEFGHIJ"), uc::jni::make_cexprstr("ABCDEFGHIJ").append(""));
+
+STATIC_ASSERT_NOT_EQUALS(uc::jni::make_cexprstr(""), uc::jni::make_cexprstr("a"));
+STATIC_ASSERT_NOT_EQUALS(uc::jni::make_cexprstr("a"), uc::jni::make_cexprstr(""));
+STATIC_ASSERT_NOT_EQUALS(uc::jni::make_cexprstr("a"), uc::jni::make_cexprstr("b"));
+STATIC_ASSERT_NOT_EQUALS(uc::jni::make_cexprstr("abc"), uc::jni::make_cexprstr("abb"));
+
+STATIC_ASSERT_NOT_EQUALS(uc::jni::make_cexprstr("ABCDE"), uc::jni::make_cexprstr("ABCD"));
+STATIC_ASSERT_NOT_EQUALS(uc::jni::make_cexprstr("ABCD"), uc::jni::make_cexprstr("ABCDE"));
+STATIC_ASSERT_NOT_EQUALS(uc::jni::make_cexprstr("ABCDE").append("FGHI"), uc::jni::make_cexprstr("ABCDE").append("FGHIJ"));
+
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("V"), uc::jni::type_traits<void>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("Z"), uc::jni::type_traits<jboolean>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("B"), uc::jni::type_traits<jbyte>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("C"), uc::jni::type_traits<jchar>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("S"), uc::jni::type_traits<jshort>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("I"), uc::jni::type_traits<jint>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("J"), uc::jni::type_traits<jlong>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("D"), uc::jni::type_traits<jdouble>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("F"), uc::jni::type_traits<jfloat>::signature());
+
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("Ljava/lang/Object;"), uc::jni::type_traits<jobject>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("Ljava/lang/String;"), uc::jni::type_traits<jstring>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("Lcom/example/uc/ucjnitest/UcJniTest;"), uc::jni::type_traits<UcJniTest>::signature());
+
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Z"), uc::jni::type_traits<jbooleanArray>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[B"), uc::jni::type_traits<jbyteArray>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[C"), uc::jni::type_traits<jcharArray>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[S"), uc::jni::type_traits<jshortArray>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[I"), uc::jni::type_traits<jintArray>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[J"), uc::jni::type_traits<jlongArray>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[D"), uc::jni::type_traits<jdoubleArray>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[F"), uc::jni::type_traits<jfloatArray>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Ljava/lang/Object;"), uc::jni::type_traits<jobjectArray>::signature());
+
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("Z"), uc::jni::type_traits<bool>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("B"), uc::jni::type_traits<char>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("C"), uc::jni::type_traits<char16_t>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("Ljava/lang/String;"), uc::jni::type_traits<std::string>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("Ljava/lang/String;"), uc::jni::type_traits<std::u16string>::signature());
+
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Z"), uc::jni::type_traits<std::vector<jboolean>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[B"), uc::jni::type_traits<std::vector<jbyte>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[C"), uc::jni::type_traits<std::vector<jchar>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[S"), uc::jni::type_traits<std::vector<jshort>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[I"), uc::jni::type_traits<std::vector<jint>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[J"), uc::jni::type_traits<std::vector<jlong>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[D"), uc::jni::type_traits<std::vector<jdouble>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[F"), uc::jni::type_traits<std::vector<jfloat>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Ljava/lang/Object;"), uc::jni::type_traits<std::vector<jobject>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Ljava/lang/String;"), uc::jni::type_traits<std::vector<jstring>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Lcom/example/uc/ucjnitest/UcJniTest;"), uc::jni::type_traits<std::vector<UcJniTest>>::signature());
+
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()V"), uc::jni::type_traits<void()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()Z"), uc::jni::type_traits<jboolean()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()B"), uc::jni::type_traits<jbyte()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()C"), uc::jni::type_traits<jchar()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()S"), uc::jni::type_traits<jshort()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()I"), uc::jni::type_traits<jint()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()J"), uc::jni::type_traits<jlong()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()D"), uc::jni::type_traits<jdouble()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()F"), uc::jni::type_traits<jfloat()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()Ljava/lang/Object;"), uc::jni::type_traits<jobject()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()Ljava/lang/String;"), uc::jni::type_traits<jstring()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()Lcom/example/uc/ucjnitest/UcJniTest;"), uc::jni::type_traits<UcJniTest()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()[Z"), uc::jni::type_traits<jbooleanArray()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()[B"), uc::jni::type_traits<jbyteArray()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()[C"), uc::jni::type_traits<jcharArray()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()[S"), uc::jni::type_traits<jshortArray()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()[I"), uc::jni::type_traits<jintArray()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()[J"), uc::jni::type_traits<jlongArray()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()[D"), uc::jni::type_traits<jdoubleArray()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()[F"), uc::jni::type_traits<jfloatArray()>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()[Ljava/lang/Object;"), uc::jni::type_traits<jobjectArray()>::signature());
+
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("(ZBCSIJLjava/lang/String;DF)V"), uc::jni::type_traits<void(jboolean,jbyte,jchar,jshort,jint,jlong,jstring,jdouble,jfloat)>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("([Ljava/lang/Object;[Z[B[C[S[I[J[D[F)Ljava/lang/String;"), uc::jni::type_traits<jstring(jobjectArray,jbooleanArray,jbyteArray,jcharArray,jshortArray,jintArray,jlongArray,jdoubleArray,jfloatArray)>::signature());
 
 JNI(void, testTypeTraitsSignature)(JNIEnv *env, jobject thiz)
 {

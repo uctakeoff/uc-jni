@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "0.1.2"
-#define UC_JNI_VERSION_NUM 0x000102
+#define UC_JNI_VERSION "0.1.3"
+#define UC_JNI_VERSION_NUM 0x000103
 
 #include <jni.h>
 #include <memory>
@@ -483,31 +483,56 @@ namespace internal
     template <std::size_t M, std::size_t... i> struct make_indices : public make_indices<M - 1, i..., sizeof...(i)> {};
     template <std::size_t... i> struct make_indices<0, i...> { using type = indices<i...>; };
 
+    // constexpr string
     template <std::size_t N> struct cexprstr
     {
-        template <std::size_t... i> constexpr cexprstr(const char (&v)[N], indices<i...>) : value{v[i]...} {}
-
-        template <std::size_t M, std::size_t... i1, std::size_t... i2>
-        constexpr cexprstr(const char (&v1)[M], indices<i1...>, const char (&v2)[N-M+1], indices<i2...>) : value{v1[i1]..., v2[i2]...} {}
-        constexpr cexprstr(const char (&v)[N]) : cexprstr(v, typename make_indices<N>::type{})
+        template <std::size_t... i> constexpr cexprstr(const char (&v)[N], indices<i...>) noexcept : value{v[i]...}
         {
         }
-        template <std::size_t M> constexpr cexprstr(const char (&v1)[M], const char (&v2)[N-M+1])
+        template <std::size_t M, std::size_t... i1, std::size_t... i2>
+        constexpr cexprstr(const char (&v1)[M], indices<i1...>, const char (&v2)[N-M+1], indices<i2...>) noexcept : value{v1[i1]..., v2[i2]...}
+        {
+        }
+        constexpr cexprstr(const char (&v)[N]) noexcept : cexprstr(v, typename make_indices<N>::type{})
+        {
+        }
+        template <std::size_t M> constexpr cexprstr(const char (&v1)[M], const char (&v2)[N-M+1]) noexcept
             : cexprstr(v1, typename make_indices<M-1>::type{}, v2, typename make_indices<N-M+1>::type{})
         {
         }
-        template<std::size_t M> constexpr cexprstr<N+M-1> append(const cexprstr<M>& obj)
+        template<std::size_t M> constexpr cexprstr<N+M-1> append(const cexprstr<M>& obj) noexcept
         {
             return cexprstr<N+M-1>(value, obj.value);
         }
-        template<std::size_t M> constexpr cexprstr<N+M-1> append(const char (&v)[M])
+        template<std::size_t M> constexpr cexprstr<N+M-1> append(const char (&v)[M]) noexcept
         {
             return cexprstr<N+M-1>(value, v);
         }
-        constexpr const char* c_str() const { return value; }
+        template<std::size_t M> constexpr int compare(std::size_t pos1, std::size_t n1, const cexprstr<M>& str, std::size_t pos2, std::size_t n2) const noexcept
+        {
+            return compare(pos1, n1, str.value, pos2, n2);
+        }
+        template<std::size_t M> constexpr int compare(std::size_t pos1, std::size_t n1, const char (&str)[M], std::size_t pos2, std::size_t n2) const noexcept
+        {
+            return (n1 != n2) ? (n1 < n2 ? -1 : 1)
+                :  (n1 == 0) ? 0 
+                :  (value[pos1] != str[pos2]) ? value[pos1] - str[pos2]
+                :  compare(pos1 + 1, n1 - 1, str, pos2 + 1, n2 - 1);
+        }
+
+        constexpr const char* c_str() const noexcept { return value; }
 
         char value[N];
     };
+    template<std::size_t N, std::size_t M> constexpr bool operator==(const cexprstr<N>& a, const cexprstr<M>& b) noexcept
+    {
+        return a.compare(0, N, b, 0, M) == 0;
+    }
+    template<std::size_t N, std::size_t M> constexpr bool operator!=(const cexprstr<N>& a, const cexprstr<M>& b) noexcept
+    {
+            return !operator==(a, b);
+    }
+
 }
 template <size_t N> constexpr internal::cexprstr<N> make_cexprstr(const char (&v)[N])
 {
