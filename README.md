@@ -99,7 +99,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 
         :
 
-        env->DeleteLocalRef(cls);
+        uc::jni::env()->DeleteLocalRef(cls);
     });
 ```
 
