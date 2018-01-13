@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "0.1.3"
-#define UC_JNI_VERSION_NUM 0x000103
+#define UC_JNI_VERSION "0.2.0"
+#define UC_JNI_VERSION_NUM 0x000200
 
 #include <jni.h>
 #include <memory>
@@ -268,13 +268,17 @@ template <typename T, typename Traits = string_traits<T>> decltype(auto) get_cha
     return std::unique_ptr<const T, decltype(deleter)>(Traits::get_chars(env(), str, isCopy), std::move(deleter));
 }
 
-template <typename T, typename Traits = string_traits<T>> local_ref<jstring> to_jstring(const std::basic_string<T>& str)
+template <typename T, typename Traits = string_traits<T>> local_ref<jstring> to_jstring(const T* str, size_t n) noexcept
 {
-    return make_local(Traits::new_string(env(), str.c_str(), static_cast<jsize>(str.size())));
+    return make_local(Traits::new_string(env(), str, static_cast<jsize>(n)));
 }
-template <typename T, typename Traits = string_traits<T>> local_ref<jstring> to_jstring(const T* str)
+template <typename T, typename Traits = string_traits<T>> local_ref<jstring> to_jstring(const std::basic_string<T>& str) noexcept
 {
-    return make_local(Traits::new_string(env(), str, static_cast<jsize>(std::char_traits<T>::length(str))));
+    return to_jstring<T,Traits>(str.c_str(), str.size());
+}
+template <typename T, size_t N, typename Traits = string_traits<T>> local_ref<jstring> to_jstring(const T (&str)[N]) noexcept
+{
+    return to_jstring<T,Traits>(str, N-1);
 }
 
 template <typename T, typename JStr, typename Traits = string_traits<T>> std::basic_string<T> to_basic_string(const JStr& str)
@@ -295,6 +299,56 @@ template <typename JStr> std::u16string to_u16string(const JStr& str)
 }
 
 
+using string_buffer = std::basic_string<jchar>;
+
+inline void append(string_buffer& buf, jstring str)
+{
+    const auto len = string_traits<jchar>::length(env(), str);
+    const auto prevlen = buf.size();
+    buf.resize(prevlen + len);
+    string_traits<jchar>::get_region(env(), str, 0, len, &buf[prevlen]);
+}
+inline void append(string_buffer& buf, const local_ref<jstring>& str)
+{
+    append(buf, str.get());
+}
+inline void append(string_buffer& buf, const global_ref<jstring>& str)
+{
+    append(buf, str.get());
+}
+inline void append(string_buffer& buf, const jchar* str, size_t len)
+{
+    buf.append(str, len);
+}
+inline void append(string_buffer& buf, const char16_t* str, size_t len)
+{
+    buf.append(reinterpret_cast<const jchar*>(str), len);
+}
+inline void append(string_buffer& buf, const char* str, size_t len)
+{
+    append(buf, to_jstring(str, len));
+}
+template <typename T, size_t N> void append(string_buffer& buf, const T (&str)[N])
+{
+    append(buf, str, N-1);
+}
+template <typename T> void append(string_buffer& buf, const std::basic_string<T>& str)
+{
+    append(buf, str.c_str(), str.size());
+}
+
+inline void join_buffer(string_buffer& buf) {}
+template <typename T, typename... Ts> void join_buffer(string_buffer& buf, T&& str, Ts&&... strings)
+{
+    append(buf, std::forward<T>(str));
+    join_buffer(buf, std::forward<Ts>(strings)...);
+}
+template <typename... Ts> local_ref<jstring> join(Ts&&... strings)
+{
+    string_buffer buf;
+    join_buffer(buf, std::forward<Ts>(strings)...);
+    return to_jstring(buf);
+}
 
 //*************************************************************************************************
 // Function Traits
@@ -622,21 +676,21 @@ template<typename T> struct type_traits<std::basic_string<T>>
     static jstring j_cast(const std::basic_string<T>& v) { return to_jstring(v).release(); }
     static constexpr decltype(auto) signature() noexcept { return type_traits<jstring>::signature(); }
 };
+#if 0
 template<> struct type_traits<const char*>
 {
-    using jvalue_type = jstring;
-    using jarray_type = jobjectArray;
-    static jstring j_cast(const char* v) { return to_jstring(v).release(); }
-    static constexpr decltype(auto) signature() noexcept { return type_traits<jstring>::signature(); }
+   using jvalue_type = jstring;
+   using jarray_type = jobjectArray;
+   static jstring j_cast(const char* v) { return to_jstring(v).release(); }
+   static constexpr decltype(auto) signature() noexcept { return type_traits<jstring>::signature(); }
 };
 template<> struct type_traits<const char16_t*>
 {
-    using jvalue_type = jstring;
-    using jarray_type = jobjectArray;
-    static jstring j_cast(const char16_t* v) { return to_jstring(v).release(); }
-    static constexpr decltype(auto) signature() noexcept { return type_traits<jstring>::signature(); }
+   using jvalue_type = jstring;
+   using jarray_type = jobjectArray;
+   static jstring j_cast(const char16_t* v) { return to_jstring(v).release(); }
+   static constexpr decltype(auto) signature() noexcept { return type_traits<jstring>::signature(); }
 };
-#if 0
 template <typename T> struct type_traits<array<T>>
 {
     using jvalue_type = jobjectArray;
@@ -720,22 +774,26 @@ template <typename T> struct type_traits<std::vector<T*>>
     }
 };
 
-
+template<typename T> const char* get_signature() noexcept
+{
+    static auto instance = type_traits<T>::signature();
+    return instance.c_str();
+}
 template<typename JType, typename T> jfieldID get_field_id(const char* name) noexcept
 {
-    return env()->GetFieldID(get_class<JType>(), name, type_traits<T>::signature().c_str());
+    return env()->GetFieldID(get_class<JType>(), name, get_signature<T>());
 }
 template<typename JType, typename T> jfieldID get_static_field_id(const char* name) noexcept
 {
-    return env()->GetStaticFieldID(get_class<JType>(), name, type_traits<T>::signature().c_str());
+    return env()->GetStaticFieldID(get_class<JType>(), name, get_signature<T>());
 }
 template<typename JType, typename T> jmethodID get_method_id(const char* name) noexcept
 {
-    return env()->GetMethodID(get_class<JType>(), name, type_traits<T>::signature().c_str());
+    return env()->GetMethodID(get_class<JType>(), name, get_signature<T>());
 }
 template<typename JType, typename T> jmethodID get_static_method_id(const char* name) noexcept
 {
-    return env()->GetStaticMethodID(get_class<JType>(), name, type_traits<T>::signature().c_str());
+    return env()->GetStaticMethodID(get_class<JType>(), name, get_signature<T>());
 }
 
 
