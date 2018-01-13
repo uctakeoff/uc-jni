@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "0.2.0"
-#define UC_JNI_VERSION_NUM 0x000200
+#define UC_JNI_VERSION "0.3.0"
+#define UC_JNI_VERSION_NUM 0x000300
 
 #include <jni.h>
 #include <memory>
@@ -72,27 +72,27 @@ typename T::element_type* get(const T& obj) noexcept
     return obj.get();
 }
 
-template <typename JObj> using native_ref = decltype(get<JObj>({}));
+template <typename JType> using native_ref = decltype(get<JType>({}));
 
 
-template <typename JObj> struct local_ref_deleter
+template <typename JType> struct local_ref_deleter
 {
-    void operator()(JObj p) const noexcept
+    void operator()(JType p) const noexcept
     {
         env()->DeleteLocalRef(p);
     }
 };
-template <typename JObj> using local_ref = std::unique_ptr<std::remove_pointer_t<JObj>, local_ref_deleter<JObj>>;
-template <typename JObj> local_ref<JObj> make_local(JObj obj) noexcept
+template <typename JType> using local_ref = std::unique_ptr<std::remove_pointer_t<JType>, local_ref_deleter<JType>>;
+template <typename JType> local_ref<JType> make_local(JType obj) noexcept
 {
-    return local_ref<JObj>{obj};
+    return local_ref<JType>{obj};
 }
 
 
-template <typename JObj> using global_ref = std::shared_ptr<std::remove_pointer_t<JObj>>;
-template <typename JObj> global_ref<native_ref<JObj>> make_global(const JObj& obj)
+template <typename JType> using global_ref = std::shared_ptr<std::remove_pointer_t<JType>>;
+template <typename JType> global_ref<native_ref<JType>> make_global(const JType& obj)
 {
-    return global_ref<native_ref<JObj>>(static_cast<native_ref<JObj>>(env()->NewGlobalRef(get(obj))), [](native_ref<JObj> p) { env()->DeleteGlobalRef(p); });
+    return global_ref<native_ref<JType>>(static_cast<native_ref<JType>>(env()->NewGlobalRef(get(obj))), [](native_ref<JType> p) { env()->DeleteGlobalRef(p); });
 }
 
 
@@ -100,7 +100,7 @@ template <typename JObj> global_ref<native_ref<JObj>> make_global(const JObj& ob
 // Weak Global References
 //*************************************************************************************************
 
-template <typename JObj> class weak_ref
+template <typename JType> class weak_ref
 {
 public:
     weak_ref() = default;
@@ -119,9 +119,9 @@ public:
     {
         impl.reset();
     }
-    local_ref<JObj> lock() const
+    local_ref<JType> lock() const
     {
-        return make_local(static_cast<JObj>(env()->NewLocalRef(impl.get())));
+        return make_local(static_cast<JType>(env()->NewLocalRef(impl.get())));
     }
     bool expired() const
     {
@@ -136,7 +136,7 @@ private:
     using impl_type = std::shared_ptr<std::remove_pointer_t<jweak>>;
     template <typename T> static impl_type make_weak(const T& obj)
     {
-        return impl_type(static_cast<JObj>(env()->NewWeakGlobalRef(get(obj))), [](JObj p) { env()->DeleteWeakGlobalRef(p); });
+        return impl_type(static_cast<JType>(env()->NewWeakGlobalRef(get(obj))), [](JType p) { env()->DeleteWeakGlobalRef(p); });
     }
 
     impl_type impl;
@@ -164,9 +164,9 @@ inline local_ref<jclass> find_class(const char* fqcn)
     if (env()->ExceptionCheck()) throw exception();
     return make_local(o);
 }
-template<typename JObj> jclass get_class()
+template<typename JType> jclass get_class()
 {
-    static auto instance = make_global(find_class(fqcn<JObj>()));
+    static auto instance = make_global(find_class(fqcn<JType>()));
     return instance.get();
 }
 
@@ -183,19 +183,19 @@ using className = className##_impl*
 // Object Operations
 //*************************************************************************************************
 
-template <typename JObj> local_ref<jclass> get_object_class(const JObj& obj) noexcept
+template <typename JType> local_ref<jclass> get_object_class(const JType& obj) noexcept
 {
     return make_local(env()->GetObjectClass(get(obj)));
 }
-template <typename JObj, typename JClass> bool is_instance_of(const JObj& obj, const JClass& clazz) noexcept
+template <typename JType, typename JClass> bool is_instance_of(const JType& obj, const JClass& clazz) noexcept
 {
     return env()->IsInstanceOf(get(obj), get(clazz)) == JNI_TRUE;
 }
-template <typename JType, typename JObj> bool is_instance_of(const JObj& obj) noexcept
+template <typename JType, typename T> bool is_instance_of(const T& obj) noexcept
 {
     return is_instance_of(obj, get_class<JType>());
 }
-template <typename JObj1, typename JObj2> bool is_same_object(const JObj1& ref1, const JObj2& ref2) noexcept
+template <typename JType1, typename JType2> bool is_same_object(const JType1& ref1, const JType2& ref2) noexcept
 {
     return env()->IsSameObject(get(ref1), get(ref2)) == JNI_TRUE;
 }
@@ -502,7 +502,7 @@ public:
     array(jsize size) : impl(make_global(make_local(env()->NewObjectArray(size, get_class<T>(), nullptr))))
     {
     }
-    template<typename JObj> array(const JObj& array) : impl(make_global(array))
+    template<typename JType> array(const JType& array) : impl(make_global(array))
     {
     }
     jobjectArray get() const
@@ -517,7 +517,7 @@ public:
     {
         return make_local(static_cast<T>(env()->GetObjectArrayElement(impl.get(), i)));
     }
-    template<typename JObj> void set(jsize i, const JObj& value)
+    template<typename JType> void set(jsize i, const JType& value)
     {
         env()->SetObjectArrayElement(impl.get(), i, jni::get(value));
     }
@@ -953,6 +953,25 @@ template <typename JType, typename... Args> struct constructor<JType(Args...)>
 template <typename Fun> constructor<Fun> make_constructor() noexcept
 {
     return constructor<Fun>{ constructor<Fun>::get_id() };
+}
+
+
+//*************************************************************************************************
+// Monitor Operations
+//*************************************************************************************************
+
+template <typename JType> struct monitor_exit
+{
+    void operator()(JType monitor) const noexcept
+    {
+        env()->MonitorExit(monitor);
+    }
+};
+template <typename JType> using monitor = std::unique_ptr<std::remove_pointer_t<JType>, monitor_exit<JType>>;
+template <typename JType> monitor<native_ref<JType>> synchronized(JType obj) noexcept
+{
+    if (env()->MonitorEnter(get(obj)) != 0) throw std::runtime_error("uc::jni::syncronized");
+    return monitor<native_ref<JType>>(get(obj));
 }
 
 

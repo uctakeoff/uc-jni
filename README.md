@@ -148,7 +148,9 @@ Recommended.
 ```
 
 
-## Convert Strings
+## String Operations
+
+`jstring` and `std::basic_string` can convert to each other.
 
 ```cpp
 
@@ -158,13 +160,25 @@ Recommended.
     std::string str = uc::jni::to_string(jstr);
 ```
 
-### Support C++11 UTF-16 string
+Supports C++11 UTF-16 string.
 
 ```cpp
     auto jstr = uc::jni::to_jstring(u"こんにちは、世界！"); // japanese
 
     std::u16string str = uc::jni::to_u16string(jstr);
 ```
+
+`uc::jni::join` is more convenient to create `jstring`.
+
+```cpp
+jstring returnString(JNIEnv* env, jobject obj, jstring str)
+{
+    // Arguments can include jstring, std::string, std :: u16string, and so on.
+
+    return uc::jni::join("[", str, "] received.").release();
+}
+```
+
 
 
 ## Method ID, Field ID
@@ -203,4 +217,18 @@ The following "function object" which is more convenient is recommended.
     // System.gc();
     gc();
 
-``
+```
+
+## Monitor Operations
+
+```c++
+
+void func(JNIEnv *env, jobject thiz, jobject monitor)
+{
+    auto s = uc::jni::synchronized(monitor);
+            :
+            :
+}
+
+
+```
