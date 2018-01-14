@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "0.3.0"
-#define UC_JNI_VERSION_NUM 0x000300
+#define UC_JNI_VERSION "0.3.1"
+#define UC_JNI_VERSION_NUM 0x000301
 
 #include <jni.h>
 #include <memory>
@@ -20,7 +20,7 @@ namespace uc {
 namespace jni {
 
 // uc-jni exception
-class exception : public std::exception {};
+class vm_exception : public std::exception {};
 
 //*************************************************************************************************
 // JavaVM
@@ -161,7 +161,7 @@ DEFINE_FQDN(jthrowable, java/lang/Throwable)
 inline local_ref<jclass> find_class(const char* fqcn)
 {
     auto o = env()->FindClass(fqcn);
-    if (env()->ExceptionCheck()) throw exception();
+    if (env()->ExceptionCheck()) throw vm_exception();
     return make_local(o);
 }
 template<typename JType> jclass get_class()
@@ -206,7 +206,7 @@ template <typename JType1, typename JType2> bool is_same_object(const JType1& re
 
 inline void exception_check()
 {
-    if (env()->ExceptionCheck()) throw exception();
+    if (env()->ExceptionCheck()) throw vm_exception();
 }
 template <typename JThrowable> void throw_new(const char* what) noexcept
 {
@@ -218,7 +218,7 @@ template <class F, class... Args> decltype(auto) exception_guard(F&& func, Args&
 {
     try {
         return func(std::forward<Args>(args)...);
-    } catch (jni::exception&) {
+    } catch (vm_exception&) {
         // do nothing
     } catch (std::exception& e) {
         throw_new<RuntimeException>(e.what());
@@ -423,16 +423,18 @@ DEFINE_PRIMITIVE_FUNC_TRAITS(jdouble,  Double);
 // Primitive Array Operations
 //*************************************************************************************************
 
-template <typename T, typename Traits = function_traits<T>> local_ref<typename Traits::array_type> new_array(jsize length)
+
+template <typename T, typename Traits = function_traits<T>, std::enable_if_t<std::is_arithmetic<T>::value, std::nullptr_t> = nullptr> 
+local_ref<typename Traits::array_type> new_array(jsize length)
 {
     return make_local(Traits::new_array(env(), length));
 }
-template <typename JArray, typename Traits = function_traits<native_ref<JArray>>> 
+template <typename JArray, typename Traits = function_traits<native_ref<JArray>>, std::enable_if_t<std::is_arithmetic<typename Traits::value_type>::value, std::nullptr_t> = nullptr> 
 void get_region(const JArray& array, jsize start, jsize len, typename Traits::value_type* buf)
 {
     Traits::get_region(env(), get(array), start, len, buf);
 }
-template <typename JArray, typename Traits = function_traits<native_ref<JArray>>>
+template <typename JArray, typename Traits = function_traits<native_ref<JArray>>, std::enable_if_t<std::is_arithmetic<typename Traits::value_type>::value, std::nullptr_t> = nullptr>
 void set_region(const JArray& array, jsize start, jsize len, const typename Traits::value_type* buf)
 {
     Traits::set_region(env(), get(array), start, len, buf);
@@ -633,8 +635,8 @@ template<> struct type_traits<ctype>\
 {\
     using jvalue_type = jtype;\
     using jarray_type = jtype ## Array;\
-    static ctype c_cast(jtype v) noexcept { return static_cast<ctype>(v); }\
-    static jtype j_cast(ctype v) noexcept { return static_cast<jtype>(v); }\
+    static constexpr ctype c_cast(jtype v) noexcept { return static_cast<ctype>(v); }\
+    static constexpr jtype j_cast(ctype v) noexcept { return static_cast<jtype>(v); }\
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr(#sign); }\
 }
 #define DEFINE_TYPE_TRAITS_A(type, sign) \
@@ -643,8 +645,8 @@ template<> struct type_traits<type##Array>\
 {\
     using jvalue_type = type##Array;\
     using jarray_type = jobjectArray;\
-    static jvalue_type c_cast(jvalue_type v) noexcept { return v; }\
-    static jvalue_type j_cast(jvalue_type v) noexcept { return v; }\
+    static constexpr jvalue_type c_cast(jvalue_type v) noexcept { return v; }\
+    static constexpr jvalue_type j_cast(jvalue_type v) noexcept { return v; }\
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(#sign); }\
 }
 
@@ -656,17 +658,25 @@ DEFINE_TYPE_TRAITS_A(jint,     I);
 DEFINE_TYPE_TRAITS_A(jlong,    J);
 DEFINE_TYPE_TRAITS_A(jfloat,   F);
 DEFINE_TYPE_TRAITS_A(jdouble,  D);
-DEFINE_TYPE_TRAITS_A(jobject,  Ljava/lang/Object;);
+// DEFINE_TYPE_TRAITS_A(jobject,  Ljava/lang/Object;);
 DEFINE_TYPE_TRAITS(char,     jbyte, B);
 DEFINE_TYPE_TRAITS(char16_t, jchar, C);
 
+template<> struct type_traits<jobjectArray>
+{
+    using jvalue_type = jobjectArray;
+    using jarray_type = jobjectArray;
+    static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
+    static constexpr jvalue_type j_cast(jvalue_type v) noexcept { return v; }
+    static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(type_traits<jobject>::signature()); }
+};
 template<> struct type_traits<bool>
 {
     using jvalue_type = jboolean;
     using jarray_type = jbooleanArray;
     static constexpr bool c_cast(jboolean v) noexcept { return v == JNI_TRUE; }
     static constexpr jboolean j_cast(bool v) noexcept { return v ? JNI_TRUE : JNI_FALSE; }
-    static constexpr decltype(auto) signature() noexcept { return type_traits<jboolean>::signature(); }
+    static constexpr decltype(auto) signature() noexcept { return type_traits<jvalue_type>::signature(); }
 };
 template<typename T> struct type_traits<std::basic_string<T>>
 {
@@ -674,7 +684,7 @@ template<typename T> struct type_traits<std::basic_string<T>>
     using jarray_type = jobjectArray;
     static std::basic_string<T> c_cast(jstring v) { return to_basic_string<T>(v); }
     static jstring j_cast(const std::basic_string<T>& v) { return to_jstring(v).release(); }
-    static constexpr decltype(auto) signature() noexcept { return type_traits<jstring>::signature(); }
+    static constexpr decltype(auto) signature() noexcept { return type_traits<jvalue_type>::signature(); }
 };
 #if 0
 template<> struct type_traits<const char*>
@@ -706,17 +716,17 @@ template <> struct type_traits<std::vector<bool>>
     using jarray_type = jobjectArray;
     static constexpr decltype(auto) signature() noexcept
     {
-        return make_cexprstr("[").append(type_traits<bool>::signature()); 
+        return type_traits<jvalue_type>::signature();
     }
     static std::vector<bool> c_cast(jvalue_type v)
     {
-        auto elems = jni::get_elements(v);
+        auto elems = get_elements(v);
         return std::vector<bool>(jni::begin(elems), jni::end(elems));
     }
     static jvalue_type j_cast(const std::vector<bool>& v)
     {
-        auto ret = jni::new_array<jboolean>(static_cast<jsize>(v.size()));
-        auto elems = jni::get_elements(ret, true);
+        auto ret = new_array<jboolean>(static_cast<jsize>(v.size()));
+        auto elems = get_elements(ret, true);
         std::copy(v.begin(), v.end(), jni::begin(elems));
         return ret.release();
     }
@@ -733,14 +743,14 @@ template <typename T> struct type_traits<std::vector<T>>
     {
         const auto len = length(v);
         std::vector<T> ret(len);
-        jni::get_region(v, 0, len, ret.data());
+        get_region(v, 0, len, ret.data());
         return ret;
     }
     static jvalue_type j_cast(const std::vector<T>& v)
     {
         const auto len = static_cast<jsize>(v.size());
-        auto ret = jni::new_array<T>(len);
-        jni::set_region(ret, 0, len, v.data());
+        auto ret = new_array<T>(len);
+        set_region(ret, 0, len, v.data());
         return ret.release();
     }
 };
@@ -766,7 +776,7 @@ template <typename T> struct type_traits<std::vector<T*>>
     {
         const auto e = env();
         const auto len = static_cast<jsize>(v.size());
-        auto ret = jni::make_local(e->NewObjectArray(len, get_class<T*>(), nullptr));
+        auto ret = make_local(e->NewObjectArray(len, get_class<T*>(), nullptr));
         for (jsize i = 0; i < len; ++i) {
             e->SetObjectArrayElement(ret.get(), i, v[i]);
         }
@@ -968,7 +978,7 @@ template <typename JType> struct monitor_exit
     }
 };
 template <typename JType> using monitor = std::unique_ptr<std::remove_pointer_t<JType>, monitor_exit<JType>>;
-template <typename JType> monitor<native_ref<JType>> synchronized(JType obj) noexcept
+template <typename JType> monitor<native_ref<JType>> synchronized(const JType& obj) noexcept
 {
     if (env()->MonitorEnter(get(obj)) != 0) throw std::runtime_error("uc::jni::syncronized");
     return monitor<native_ref<JType>>(get(obj));
