@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "0.3.1"
-#define UC_JNI_VERSION_NUM 0x000301
+#define UC_JNI_VERSION "0.4.0"
+#define UC_JNI_VERSION_NUM 0x000400
 
 #include <jni.h>
 #include <memory>
@@ -378,13 +378,12 @@ template<typename> struct function_traits;
 template<typename T> struct function_traits<T*>
 {
     using value_type = T*;
-    using array_type = jobjectArray;
- 
+    // using array_type = jobjectArray;
     DEFINE_FIELD_OPERATOR(T*, Object)
     DEFINE_METHOD_OPERATOR(T*, Object)
-    static array_type new_array(JNIEnv* e, jsize length, jclass elementClass, jobject initialElement) noexcept { return e->NewObjectArray(length, elementClass, initialElement); }
-    static value_type get_element(JNIEnv* e, array_type array, jsize index) noexcept { return static_cast<T>(e->GetObjectArrayElement(array, index)); }
-    static void set_element(JNIEnv* e, array_type array, jsize index, value_type value) noexcept { return e->SetObjectArrayElement(array, index, value); }
+    // static array_type new_array(JNIEnv* e, jsize length, jclass elementClass, jobject initialElement) noexcept { return e->NewObjectArray(length, elementClass, initialElement); }
+    // static value_type get_element(JNIEnv* e, array_type array, jsize index) noexcept { return static_cast<T>(e->GetObjectArrayElement(array, index)); }
+    // static void set_element(JNIEnv* e, array_type array, jsize index, value_type value) noexcept { return e->SetObjectArrayElement(array, index, value); }
 };
 template<> struct function_traits<void>
 {
@@ -419,10 +418,11 @@ DEFINE_PRIMITIVE_FUNC_TRAITS(jdouble,  Double);
 #undef DEFINE_FIELD_OPERATOR
 #undef DEFINE_ARRAY_OPERATOR
 
+
+
 //*************************************************************************************************
 // Primitive Array Operations
 //*************************************************************************************************
-
 
 template <typename T, typename Traits = function_traits<T>, std::enable_if_t<std::is_arithmetic<T>::value, std::nullptr_t> = nullptr> 
 local_ref<typename Traits::array_type> new_array(jsize length)
@@ -449,6 +449,7 @@ jsize length(const T& array) noexcept
 {
     return length(array.get());
 }
+
 
 template<typename Traits> struct array_elements_deleter
 {
@@ -495,38 +496,52 @@ template <typename Traits> const typename Traits::value_type* end(const array_el
     return elems.get() + length(elems.get_deleter().array);
 }
 
-#if 0
-template <typename T, std::enable_if_t<is_base_ptr_of<jobject, T>::value, std::nullptr_t> = nullptr>
-class array
+
+template<typename T, std::enable_if_t<is_base_ptr_of<jobject, T>::value, std::nullptr_t> = nullptr> 
+struct array_impl : public std::remove_pointer_t<jobjectArray>
 {
-public:
-    array() = default;
-    array(jsize size) : impl(make_global(make_local(env()->NewObjectArray(size, get_class<T>(), nullptr))))
-    {
-    }
-    template<typename JType> array(const JType& array) : impl(make_global(array))
-    {
-    }
-    jobjectArray get() const
-    {
-        return impl.get();
-    }
-    jsize size() const
-    {
-        return length(impl);
-    }
-    local_ref<T> get(jsize i) const
-    {
-        return make_local(static_cast<T>(env()->GetObjectArrayElement(impl.get(), i)));
-    }
-    template<typename JType> void set(jsize i, const JType& value)
-    {
-        env()->SetObjectArrayElement(impl.get(), i, jni::get(value));
-    }
-private:
-    global_ref<jobjectArray> impl;
+    using value_type = T;
 };
-#endif
+template<typename T> using array = array_impl<T>*;
+template<typename T> using object_array_value_type = typename std::remove_pointer_t<native_ref<T>>::value_type;
+
+template <typename T, std::enable_if_t<is_base_ptr_of<jobject, T>::value, std::nullptr_t> = nullptr>
+local_ref<array<T>> new_array(jsize length)
+{
+    return make_local(static_cast<array<T>>(env()->NewObjectArray(length, get_class<T>(), nullptr)));
+}
+template <typename JObjArray, typename OutItr, typename F, std::enable_if_t<is_base_ptr_of<jobject, object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
+void get_region(const JObjArray& array, jsize start, jsize len, OutItr itr, F transform)
+{
+    const auto e = env();
+    auto arr = get(array);
+    for (jsize i = start, ie = start + len; i < ie; ++i) {
+        *itr = transform(make_local(static_cast<object_array_value_type<JObjArray>>(e->GetObjectArrayElement(arr, i))));
+        ++itr;
+    }
+}
+template <typename JObjArray, typename OutItr, typename F, std::enable_if_t<is_base_ptr_of<jobject, object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
+void get_region(const JObjArray& array, jsize start, jsize len, OutItr itr)
+{
+    get_region(array, start, len, itr, [] (auto&& v) {return std::move(v);});
+}
+template <typename JObjArray, typename InItr, typename F, std::enable_if_t<is_base_ptr_of<jobject, object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
+void set_region(JObjArray& array, jsize start, jsize len, InItr itr, F transform)
+{
+    const auto e = env();
+    auto arr = get(array);
+    for (jsize i = start, ie = start + len; i < ie; ++i) {
+        auto lref = make_local(transform(*itr));
+        e->SetObjectArrayElement(arr, i, lref.get());
+        ++itr;
+    }
+}
+template <typename JObjArray, typename InItr, typename F, std::enable_if_t<is_base_ptr_of<jobject, object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
+void set_region(JObjArray& array, jsize start, jsize len, InItr itr)
+{
+    set_region(array, start, len, itr, [] (auto&& v) {return get(v);});
+}
+
 
 
 //*************************************************************************************************
@@ -610,7 +625,7 @@ template<> struct type_traits<void>
 template <typename T> struct type_traits<T*>
 {
     using jvalue_type = T*;
-    using jarray_type = jobjectArray;
+    using jarray_type = array<T*>;
     static constexpr local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
     static constexpr jvalue_type j_cast(jvalue_type v) noexcept { return v; }
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("L").append(fqcn<T*>()).append(";"); }
@@ -644,7 +659,7 @@ DEFINE_TYPE_TRAITS(type, type, sign);\
 template<> struct type_traits<type##Array>\
 {\
     using jvalue_type = type##Array;\
-    using jarray_type = jobjectArray;\
+    using jarray_type = array<jvalue_type>;\
     static constexpr jvalue_type c_cast(jvalue_type v) noexcept { return v; }\
     static constexpr jvalue_type j_cast(jvalue_type v) noexcept { return v; }\
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(#sign); }\
@@ -665,7 +680,7 @@ DEFINE_TYPE_TRAITS(char16_t, jchar, C);
 template<> struct type_traits<jobjectArray>
 {
     using jvalue_type = jobjectArray;
-    using jarray_type = jobjectArray;
+    using jarray_type = array<jvalue_type>;
     static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
     static constexpr jvalue_type j_cast(jvalue_type v) noexcept { return v; }
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(type_traits<jobject>::signature()); }
@@ -681,7 +696,7 @@ template<> struct type_traits<bool>
 template<typename T> struct type_traits<std::basic_string<T>>
 {
     using jvalue_type = jstring;
-    using jarray_type = jobjectArray;
+    using jarray_type = array<jvalue_type>;
     static std::basic_string<T> c_cast(jstring v) { return to_basic_string<T>(v); }
     static jstring j_cast(const std::basic_string<T>& v) { return to_jstring(v).release(); }
     static constexpr decltype(auto) signature() noexcept { return type_traits<jvalue_type>::signature(); }
@@ -690,34 +705,30 @@ template<typename T> struct type_traits<std::basic_string<T>>
 template<> struct type_traits<const char*>
 {
    using jvalue_type = jstring;
-   using jarray_type = jobjectArray;
+   using jarray_type = array<jvalue_type>;
    static jstring j_cast(const char* v) { return to_jstring(v).release(); }
    static constexpr decltype(auto) signature() noexcept { return type_traits<jstring>::signature(); }
 };
 template<> struct type_traits<const char16_t*>
 {
    using jvalue_type = jstring;
-   using jarray_type = jobjectArray;
+   using jarray_type = array<jvalue_type>;
    static jstring j_cast(const char16_t* v) { return to_jstring(v).release(); }
    static constexpr decltype(auto) signature() noexcept { return type_traits<jstring>::signature(); }
 };
+#endif
 template <typename T> struct type_traits<array<T>>
 {
-    using jvalue_type = jobjectArray;
-    using jarray_type = jobjectArray;
-    static decltype(auto) c_cast(jobjectArray v) { return array<T>(v); }
-    static jobjectArray j_cast(const array<T>& v) { return v.get(); }
+    using jvalue_type = array<T>;
+    using jarray_type = array<jvalue_type>;
+    static decltype(auto) c_cast(jvalue_type v) { return make_local(v); }
+    static constexpr jvalue_type j_cast(const array<T>& v) { return v; }
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(type_traits<T>::signature()); }
 };
-#endif
 template <> struct type_traits<std::vector<bool>>
 {
     using jvalue_type = jbooleanArray;
-    using jarray_type = jobjectArray;
-    static constexpr decltype(auto) signature() noexcept
-    {
-        return type_traits<jvalue_type>::signature();
-    }
+    using jarray_type = array<jvalue_type>;
     static std::vector<bool> c_cast(jvalue_type v)
     {
         auto elems = get_elements(v);
@@ -730,15 +741,15 @@ template <> struct type_traits<std::vector<bool>>
         std::copy(v.begin(), v.end(), jni::begin(elems));
         return ret.release();
     }
+    static constexpr decltype(auto) signature() noexcept
+    {
+        return type_traits<jvalue_type>::signature();
+    }
 };
 template <typename T> struct type_traits<std::vector<T>>
 {
     using jvalue_type = typename type_traits<T>::jarray_type;
-    using jarray_type = jobjectArray;
-    static constexpr decltype(auto) signature() noexcept
-    {
-        return make_cexprstr("[").append(type_traits<T>::signature());
-    }
+    using jarray_type = array<jvalue_type>;
     static std::vector<T> c_cast(jvalue_type v)
     {
         const auto len = length(v);
@@ -753,16 +764,16 @@ template <typename T> struct type_traits<std::vector<T>>
         set_region(ret, 0, len, v.data());
         return ret.release();
     }
+    static constexpr decltype(auto) signature() noexcept
+    {
+        return make_cexprstr("[").append(type_traits<T>::signature());
+    }
 };
 template <typename T> struct type_traits<std::vector<T*>>
 {
-    using jvalue_type = jobjectArray;
-    using jarray_type = jobjectArray;
-    static constexpr decltype(auto) signature() noexcept 
-    {
-        return make_cexprstr("[").append(type_traits<T*>::signature());
-    }
-    static decltype(auto) c_cast(jobjectArray v)
+    using jvalue_type = array<T*>;
+    using jarray_type = array<jvalue_type>;
+    static decltype(auto) c_cast(jvalue_type v)
     {
         const auto e = env();
         const auto len = length(v);
@@ -772,15 +783,19 @@ template <typename T> struct type_traits<std::vector<T*>>
         }
         return ret;
     }
-    static jobjectArray j_cast(const std::vector<T*>& v)
+    static jvalue_type j_cast(const std::vector<T*>& v)
     {
         const auto e = env();
         const auto len = static_cast<jsize>(v.size());
-        auto ret = make_local(e->NewObjectArray(len, get_class<T*>(), nullptr));
+        auto ret = new_array<T*>(len);
         for (jsize i = 0; i < len; ++i) {
             e->SetObjectArrayElement(ret.get(), i, v[i]);
         }
         return ret.release();
+    }
+    static constexpr decltype(auto) signature() noexcept 
+    {
+        return make_cexprstr("[").append(type_traits<T*>::signature());
     }
 };
 
