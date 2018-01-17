@@ -1,16 +1,20 @@
-#include "../../../../../uc-jni.hpp"
+#define UC_JNI_BETA_VERSION
 #include "androidlog.hpp"
+#include "../../../../../uc-jni.hpp"
 #include <string>
 #include <thread>
 #include <stdexcept>
 #include <algorithm>
+#include <future>
 
 #define TO_STRING_(n)	#n
 #define TO_STRING(n)	TO_STRING_(n)
-#define CODE_POSITION	__FILE__ "#" TO_STRING( __LINE__ )
-
+#define CODE_POSITION	__FILE__ ":" TO_STRING( __LINE__ )
 #define JNI(ret, name) extern "C" JNIEXPORT ret JNICALL Java_com_example_uc_ucjnitest_UcJniTest_ ## name
 
+//*************************************************************************************************
+// TEST Macro
+//*************************************************************************************************
 #define TEST_ASSERT(pred) if (!(pred)) { throw std::runtime_error(#pred "\nat " CODE_POSITION); }
 #define TEST_ASSERT_EQUALS(expected, actual) TEST_ASSERT(expected == actual)
 #define TEST_ASSERT_NOT_EQUALS(unexpected, actual) TEST_ASSERT(unexpected != actual)
@@ -19,25 +23,43 @@
 #define STATIC_ASSERT_NOT_EQUALS(unexpected, actual) STATIC_ASSERT(unexpected != actual)
 
 
-
+//*************************************************************************************************
+// Class FQCN
+//*************************************************************************************************
 DEFINE_JCLASS_ALIAS(System, java/lang/System);
 DEFINE_JCLASS_ALIAS(Log, android/util/Log);
 DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
 
+//*************************************************************************************************
+// Test sizeof
+//*************************************************************************************************
 STATIC_ASSERT_EQUALS(sizeof(uc::jni::field<System, int>), sizeof(jfieldID));
 STATIC_ASSERT_EQUALS(sizeof(uc::jni::static_field<System, int>), sizeof(jfieldID));
-
 STATIC_ASSERT_EQUALS(sizeof(uc::jni::method<System, void()>), sizeof(jmethodID));
 STATIC_ASSERT_EQUALS(sizeof(uc::jni::non_virtual_method<System, void()>), sizeof(jmethodID));
 STATIC_ASSERT_EQUALS(sizeof(uc::jni::static_method<System, void()>), sizeof(jmethodID));
 STATIC_ASSERT_EQUALS(sizeof(uc::jni::constructor<UcJniTest()>), sizeof(jmethodID));
 
-
+//*************************************************************************************************
+// Static Variables
+//*************************************************************************************************
+// void System.gc()
 uc::jni::static_method<System, void()> gc{};
+
+// int Log.d(String, String)
 uc::jni::static_method<Log, int(std::string, jstring)> logd{};
+
+// int String.compareTo(String)
 uc::jni::method<jstring, int(jstring)> compareJStrings{};
+
+// String Class.getName()
 uc::jni::method<jclass, std::string()> getClassName{};
 
+
+
+//*************************************************************************************************
+// Sample
+//*************************************************************************************************
 jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 {
     uc::jni::java_vm(vm);
@@ -106,6 +128,87 @@ JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
 
     });
 }
+
+
+//*************************************************************************************************
+// Test Exception
+//*************************************************************************************************
+JNI(void, tsetRuntimeError)(JNIEnv *env, jobject thiz)
+{
+    uc::jni::exception_guard([] {
+        throw std::runtime_error("std::runtime_error");
+    });
+}
+JNI(void, testIntException)(JNIEnv *env, jobject thiz)
+{
+    uc::jni::exception_guard([] {
+        throw 1;
+    });
+}
+
+
+//*************************************************************************************************
+// Test get_class() API Spec.
+//*************************************************************************************************
+#include<mutex>
+#include<unordered_map>
+inline jclass cached_find_class(JNIEnv* env, const char* name)
+{
+    static std::mutex mutex{};
+    static std::unordered_map<std::string, uc::jni::local_ref<jclass>> table;
+    std::lock_guard<std::mutex> lk(mutex);
+    auto i = table.find(name);
+    if (i == table.end()) {
+        auto cls = env->FindClass(name);
+        if (!cls) return cls;
+        i = table.emplace(name, uc::jni::make_local(cls)).first;
+    }
+    return i->second.get();
+}
+
+JNI(void, testResolveClass)(JNIEnv *env, jobject thiz)
+{
+    uc::jni::exception_guard([&] {
+        using namespace std::chrono;
+        using clock_type = std::chrono::high_resolution_clock;
+        DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+
+        const auto loopCount = 100000;
+        {
+            auto start = clock_type::now();
+            for (size_t i = 0; i < loopCount; ++i) {
+                auto cls = env->FindClass("android/graphics/Point");
+                env->DeleteLocalRef(cls);
+            }
+            auto end = clock_type::now();
+            LOGD << "## FindClass()  : " << duration_cast<microseconds>(end - start).count() << "us";
+        }
+
+        {
+            auto start = clock_type::now();
+            for (size_t i = 0; i < loopCount; ++i) {
+                cached_find_class(env, "android/graphics/Point");
+            }
+            auto end = clock_type::now();
+            LOGD << "## FindClass()+unordered_map  : " << duration_cast<microseconds>(end - start).count() << "us";
+        }
+
+        {
+            auto start = clock_type::now();
+            for (size_t i = 0; i < loopCount; ++i) {
+                uc::jni::get_class<Point>();
+            }
+            auto end = clock_type::now();
+            LOGD << "## uc::jni::get_class()  : " << duration_cast<microseconds>(end - start).count() << "us";
+        }
+
+    });
+}
+
+
+//*************************************************************************************************
+// Test global_ref, weak_lef
+//*************************************************************************************************
 
 uc::jni::global_ref<jstring> globalString{};
 uc::jni::weak_ref<jstring> weakString{};
@@ -176,7 +279,9 @@ JNI(void, testWeakRef)(JNIEnv *env, jobject thiz)
     });
 }
 
-
+//*************************************************************************************************
+// Test uc::jni::is_instance_of
+//*************************************************************************************************
 JNI(void, testIsInstanceOf)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
@@ -191,6 +296,9 @@ JNI(void, testIsInstanceOf)(JNIEnv *env, jobject thiz)
     });
 }
 
+//*************************************************************************************************
+// Test uc::jni::to_jstring
+//*************************************************************************************************
 JNI(void, testToJstring)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
@@ -208,6 +316,9 @@ JNI(void, testToJstring)(JNIEnv *env, jobject thiz)
         }
     });
 }
+//*************************************************************************************************
+// Test uc::jni::to_string
+//*************************************************************************************************
 JNI(void, testToString)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
@@ -245,8 +356,10 @@ JNI(void, testToString)(JNIEnv *env, jobject thiz)
     });
 }
 
-// test cexprstr
 
+//*************************************************************************************************
+// Test uc::jni::internal::cexprstr
+//*************************************************************************************************
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr(""), uc::jni::make_cexprstr(""));
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("a"), uc::jni::make_cexprstr("a"));
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("ABCDE"), uc::jni::make_cexprstr("ABCDE"));
@@ -286,6 +399,9 @@ STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[J"), uc::jni::type_traits<jlongArr
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[D"), uc::jni::type_traits<jdoubleArray>::signature());
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[F"), uc::jni::type_traits<jfloatArray>::signature());
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Ljava/lang/Object;"), uc::jni::type_traits<jobjectArray>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Ljava/lang/Object;"), uc::jni::type_traits<uc::jni::array<jobject>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Ljava/lang/String;"), uc::jni::type_traits<uc::jni::array<jstring>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Lcom/example/uc/ucjnitest/UcJniTest;"), uc::jni::type_traits<uc::jni::array<UcJniTest>>::signature());
 
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("Z"), uc::jni::type_traits<bool>::signature());
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("B"), uc::jni::type_traits<char>::signature());
@@ -301,9 +417,7 @@ STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[I"), uc::jni::type_traits<std::vec
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[J"), uc::jni::type_traits<std::vector<jlong>>::signature());
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[D"), uc::jni::type_traits<std::vector<jdouble>>::signature());
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[F"), uc::jni::type_traits<std::vector<jfloat>>::signature());
-STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Ljava/lang/Object;"), uc::jni::type_traits<std::vector<jobject>>::signature());
-STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Ljava/lang/String;"), uc::jni::type_traits<std::vector<jstring>>::signature());
-STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Lcom/example/uc/ucjnitest/UcJniTest;"), uc::jni::type_traits<std::vector<UcJniTest>>::signature());
+STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("[Ljava/lang/String;"), uc::jni::type_traits<std::vector<std::string>>::signature());
 
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()V"), uc::jni::type_traits<void()>::signature());
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()Z"), uc::jni::type_traits<jboolean()>::signature());
@@ -330,6 +444,10 @@ STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("()[Ljava/lang/Object;"), uc::jni::t
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("(ZBCSIJLjava/lang/String;DF)V"), uc::jni::type_traits<void(jboolean,jbyte,jchar,jshort,jint,jlong,jstring,jdouble,jfloat)>::signature());
 STATIC_ASSERT_EQUALS(uc::jni::make_cexprstr("([Ljava/lang/Object;[Z[B[C[S[I[J[D[F)Ljava/lang/String;"), uc::jni::type_traits<jstring(jobjectArray,jbooleanArray,jbyteArray,jcharArray,jshortArray,jintArray,jlongArray,jdoubleArray,jfloatArray)>::signature());
 
+
+//*************************************************************************************************
+// Test uc::jni::type_traits<T>::signature()
+//*************************************************************************************************
 JNI(void, testTypeTraitsSignature)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
@@ -356,6 +474,9 @@ JNI(void, testTypeTraitsSignature)(JNIEnv *env, jobject thiz)
         TEST_ASSERT_EQUALS(std::string("[D"), uc::jni::type_traits<jdoubleArray>::signature().c_str());
         TEST_ASSERT_EQUALS(std::string("[F"), uc::jni::type_traits<jfloatArray>::signature().c_str());
         TEST_ASSERT_EQUALS(std::string("[Ljava/lang/Object;"), uc::jni::type_traits<jobjectArray>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/Object;"), uc::jni::type_traits<uc::jni::array<jobject>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/String;"), uc::jni::type_traits<uc::jni::array<jstring>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[Lcom/example/uc/ucjnitest/UcJniTest;"), uc::jni::type_traits<uc::jni::array<UcJniTest>>::signature().c_str());
 
 
         TEST_ASSERT_EQUALS(std::string("Z"), uc::jni::type_traits<bool>::signature().c_str());
@@ -372,9 +493,7 @@ JNI(void, testTypeTraitsSignature)(JNIEnv *env, jobject thiz)
         TEST_ASSERT_EQUALS(std::string("[J"), uc::jni::type_traits<std::vector<jlong>>::signature().c_str());
         TEST_ASSERT_EQUALS(std::string("[D"), uc::jni::type_traits<std::vector<jdouble>>::signature().c_str());
         TEST_ASSERT_EQUALS(std::string("[F"), uc::jni::type_traits<std::vector<jfloat>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/Object;"), uc::jni::type_traits<std::vector<jobject>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/String;"), uc::jni::type_traits<std::vector<jstring>>::signature().c_str());
-        TEST_ASSERT_EQUALS(std::string("[Lcom/example/uc/ucjnitest/UcJniTest;"), uc::jni::type_traits<std::vector<UcJniTest>>::signature().c_str());
+        TEST_ASSERT_EQUALS(std::string("[Ljava/lang/String;"), uc::jni::type_traits<std::vector<std::string>>::signature().c_str());
 
 
         TEST_ASSERT_EQUALS(std::string("()V"), uc::jni::type_traits<void()>::signature().c_str());
@@ -404,7 +523,9 @@ JNI(void, testTypeTraitsSignature)(JNIEnv *env, jobject thiz)
     });
 }
 
-
+//*************************************************************************************************
+// Test uc::jni::make_static_field()
+//*************************************************************************************************
 template<typename T> void testStaticField(const char* fieldName, const T& value1, const T& value2)
 {
     auto field = uc::jni::make_static_field<UcJniTest, T>(fieldName);
@@ -416,6 +537,10 @@ template<typename T> void testStaticField(const char* fieldName, const T& value1
     TEST_ASSERT_EQUALS(value2, field.get());
     TEST_ASSERT_NOT_EQUALS(value1, field.get());
 }
+
+//*************************************************************************************************
+// Test uc::jni::make_field()
+//*************************************************************************************************
 template<typename T> void testField(const char* fieldName, jobject thiz, const T& value1, const T& value2)
 {
     auto field = uc::jni::make_field<UcJniTest, T>(fieldName);
@@ -428,6 +553,9 @@ template<typename T> void testField(const char* fieldName, jobject thiz, const T
     TEST_ASSERT_NOT_EQUALS(value1, field.get(thiz));
 }
 
+//*************************************************************************************************
+// Test uc::jni::make_static_method()
+//*************************************************************************************************
 template<typename T> void testStaticMethod(const char* fieldName, 
     const char* setMethodName, const char* getMethodName, const T& value1, const T& value2)
 {
@@ -449,6 +577,10 @@ template<typename T> void testStaticMethod(const char* fieldName,
     TEST_ASSERT_EQUALS(value2, getter());
     TEST_ASSERT_NOT_EQUALS(value1, getter());
 }
+
+//*************************************************************************************************
+// Test uc::jni::make_method()
+//*************************************************************************************************
 template<typename T> void testMethod(const char* fieldName,
     const char* setMethodName, const char* getMethodName, 
     jobject thiz, const T& value1, const T& value2)
@@ -472,6 +604,9 @@ template<typename T> void testMethod(const char* fieldName,
     TEST_ASSERT_NOT_EQUALS(value1, getter(thiz));
 }
 
+//*************************************************************************************************
+// Define Test
+//*************************************************************************************************
 #define DEFINE_FIELD_AND_METHOD_TEST(type, methodType, value1, value2) \
 JNI(void, testStaticField ## methodType)(JNIEnv *env, jobject thiz)\
 {\
@@ -490,6 +625,7 @@ JNI(void, testMethod ## methodType)(JNIEnv *env, jobject thiz)\
     uc::jni::exception_guard([&] { testMethod<type>( "field" #methodType, "setField" #methodType, "getField" #methodType, thiz, value1, value2); });\
 }
 DEFINE_FIELD_AND_METHOD_TEST(bool,           Bool,     false, true)
+DEFINE_FIELD_AND_METHOD_TEST(char16_t,       Char,     u'さ', u'A')
 DEFINE_FIELD_AND_METHOD_TEST(jbyte,          Byte,     0xff, 0xcc)
 DEFINE_FIELD_AND_METHOD_TEST(jshort,         Short,    123, 456)
 DEFINE_FIELD_AND_METHOD_TEST(jint,           Int,      1234, 5678)
@@ -499,78 +635,58 @@ DEFINE_FIELD_AND_METHOD_TEST(jdouble,        Double,   1.2345, 6.7891)
 DEFINE_FIELD_AND_METHOD_TEST(std::string,    String,   "Hello World!", "Hello Java.")
 DEFINE_FIELD_AND_METHOD_TEST(std::u16string, StringJp,  u"こんにちは、世界！", u"こんばんわ, Java.")
 
-JNI(void, testArrayField)(JNIEnv *env, jobject thiz)
+#define BOOL_ARRAY_TEST_VALUE1 std::vector<bool> {false, true, false, true, false}
+#define BOOL_ARRAY_TEST_VALUE2 std::vector<bool> {true, false, true, false, true, false, true, false}
+DEFINE_FIELD_AND_METHOD_TEST(std::vector<bool>, BoolArray,  BOOL_ARRAY_TEST_VALUE1, BOOL_ARRAY_TEST_VALUE2)
+
+#define INT_ARRAY_TEST_VALUE1 std::vector<int> {11, 21, 31, 41, 51}
+#define INT_ARRAY_TEST_VALUE2 std::vector<int> {111, 222, 333, 444, 555, 666, 777}
+DEFINE_FIELD_AND_METHOD_TEST(std::vector<int>, IntArray,  INT_ARRAY_TEST_VALUE1, INT_ARRAY_TEST_VALUE2)
+
+#define CHAR_ARRAY_TEST_VALUE1 std::vector<jchar> {u'あ', u'い', u'う', u'え', u'お'}
+#define CHAR_ARRAY_TEST_VALUE2 std::vector<jchar> {u'a', u'b', u'c', u'd', u'e', u'f', u'g'}
+DEFINE_FIELD_AND_METHOD_TEST(std::vector<jchar>, CharArray,  CHAR_ARRAY_TEST_VALUE1, CHAR_ARRAY_TEST_VALUE2)
+
+#define STRING_ARRAY_TEST_VALUE1 std::vector<std::string> { "abc", "defg", "hijk", "lmnopqr" }
+#define STRING_ARRAY_TEST_VALUE2 std::vector<std::string> { "ABC", "DEFG", "HIJK", "LMNOPQR" }
+DEFINE_FIELD_AND_METHOD_TEST(std::vector<std::string>, StringArray,  STRING_ARRAY_TEST_VALUE1, STRING_ARRAY_TEST_VALUE2)
+
+#define STRING16_ARRAY_TEST_VALUE1 std::vector<std::u16string> { u"世界", u"こんにちは", u"World!", u"Hello" }
+#define STRING16_ARRAY_TEST_VALUE2 std::vector<std::u16string> { u"Hello", u"World!", u"こんにちは", u"世界" }
+DEFINE_FIELD_AND_METHOD_TEST(std::vector<std::u16string>, String16Array,  STRING16_ARRAY_TEST_VALUE1, STRING16_ARRAY_TEST_VALUE2)
+
+
+//*************************************************************************************************
+// Test jarray <-> std::vector<T>
+//*************************************************************************************************
+template<typename T, typename JArray> void testArrayTransform(const char* fieldName, jobject thiz, const std::vector<T>& value)
 {
-    uc::jni::exception_guard([&] {
-        {
-            const auto answer = std::vector<int> {1, 2, 3, 4, 5};
-            {
-                auto field = uc::jni::make_static_field<UcJniTest, jintArray>("staticFieldIntArray");
-                auto array = field.get();
-                TEST_ASSERT_EQUALS(answer.size(), uc::jni::length(array));
-                int i = 0;
-                for (auto&& v : uc::jni::get_elements(array)) {
-                    TEST_ASSERT_EQUALS(answer[i], v);
-                    ++i;
-                }
-                TEST_ASSERT_EQUALS(answer.size(), i);
-            }
-            {
-                auto field = uc::jni::make_static_field<UcJniTest, std::vector<int>>("staticFieldIntArray");
-                TEST_ASSERT_EQUALS(answer, field.get());
-            }
-        }
+    auto field = uc::jni::make_field<UcJniTest, JArray>(fieldName);
 
-        {
-            const auto answer = std::vector<jchar> {u'あ', u'い', u'う', u'え', u'お'};
-            {
-                auto field = uc::jni::make_static_field<UcJniTest,jcharArray>("staticFieldCharArray");
-                auto array = field.get();
-                TEST_ASSERT_EQUALS(answer.size(), uc::jni::length(array));
-                int i = 0;
-                for (auto&& v : uc::jni::get_elements(array)) {
-                    TEST_ASSERT_EQUALS(answer[i], v);
-                    ++i;
-                }
-                TEST_ASSERT_EQUALS(answer.size(), i);
-            }
-            {
-                auto field = uc::jni::make_static_field<UcJniTest, std::vector<jchar>>("staticFieldCharArray");
-                TEST_ASSERT_EQUALS(answer, field.get());
-            }
-            // {
-            //     auto field = uc::jni::make_static_field<UcJniTest, std::vector<jchar>>("staticFieldCharArray");
-            //     auto fieldValues = field.get();
-            //     std::vector<char16_t> values(fieldValues.size());
-            //     std::transform(fieldValues.begin(), fieldValues.end(), values.begin(), [](auto&& v) { return static_cast<char16_t>(v); });
-            //     const auto answer = std::vector<char16_t> {u'あ', u'い', u'う', u'え', u'お'};
-            //     TEST_ASSERT_EQUALS(answer, values);
-            // }
-        }
+    field.set(thiz, uc::jni::to_jarray(value).get());
 
-        {
-            auto field = uc::jni::make_field<UcJniTest, std::vector<bool>>("fieldBoolArray");
+    auto array = field.get(thiz);
+    TEST_ASSERT_EQUALS(value.size(), uc::jni::length(array));
 
-            const auto answer = std::vector<bool> {false, true, false, true, false};
-            TEST_ASSERT_EQUALS(answer, field.get(thiz));
-        }
-        {
-            auto field = uc::jni::make_field<UcJniTest, std::vector<jstring>>("fieldStringArray");
-            auto fieldValues = field.get(thiz);
-            std::vector<std::u16string> values(fieldValues.size());
-            std::transform(fieldValues.begin(), fieldValues.end(), values.begin(), [](auto&& v) { return uc::jni::to_u16string(v); });
-            const auto answer = std::vector<std::u16string> { u"Hello", u"World!", u"こんにちは", u"世界" };
-            TEST_ASSERT_EQUALS(answer, values);
-        }
-        // {
-        //     auto field = uc::jni::make_field<UcJniTest, std::vector<std::string>>("fieldStringArray");
-        //     const auto answer = std::vector<std::string> { "Hello", "World!", "こんにちは", "世界" };
-        //     TEST_ASSERT_EQUALS(answer, field.get(thiz));
-        // }
-    });
+    auto retValue = uc::jni::to_vector<T>(array);
+    TEST_ASSERT_EQUALS(value, retValue);
 }
+#define DEFINE_ARRAY_TRANSFORM_TEST(type, arrType, methodType, value1, value2) \
+JNI(void, testArrayTransform ## methodType)(JNIEnv *env, jobject thiz)\
+{\
+    uc::jni::exception_guard([&] { testArrayTransform<type, arrType>( "field" #methodType, thiz, value1); testArrayTransform<type, arrType>( "field" #methodType, thiz, value2); });\
+}
+DEFINE_ARRAY_TRANSFORM_TEST(bool,           jbooleanArray,           BoolArray,      BOOL_ARRAY_TEST_VALUE1, BOOL_ARRAY_TEST_VALUE2)
+DEFINE_ARRAY_TRANSFORM_TEST(int,            jintArray,               IntArray,       INT_ARRAY_TEST_VALUE1, INT_ARRAY_TEST_VALUE2)
+DEFINE_ARRAY_TRANSFORM_TEST(jchar,          jcharArray,              CharArray,      CHAR_ARRAY_TEST_VALUE1, CHAR_ARRAY_TEST_VALUE2)
+DEFINE_ARRAY_TRANSFORM_TEST(std::string,    uc::jni::array<jstring>, StringArray,    STRING_ARRAY_TEST_VALUE1, STRING_ARRAY_TEST_VALUE2)
+DEFINE_ARRAY_TRANSFORM_TEST(std::u16string, uc::jni::array<jstring>, String16Array,  STRING16_ARRAY_TEST_VALUE1, STRING16_ARRAY_TEST_VALUE2)
 
-JNI(void, testArray)(JNIEnv *env, jobject thiz)
+
+//*************************************************************************************************
+// Test GetArrayElements() / SetArrayElements()
+//*************************************************************************************************
+JNI(void, testPrimitiveElements)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
         auto array = uc::jni::new_array<jint>(10);
@@ -581,35 +697,278 @@ JNI(void, testArray)(JNIEnv *env, jobject thiz)
         const int values2[] = {20, 21, 22, 23, 24, 25, 26, 27, 28, 29};
 
         {
+            uc::jni::set_region(array, 0, 10, values2);
+
+            int values3[10]{};
+            uc::jni::get_region(array, 0, 10, values3);
+            TEST_ASSERT(std::equal(std::begin(values2), std::end(values2), std::begin(values3)));
+        }
+
+        {
             auto elems = uc::jni::get_elements(array.get());
             std::copy(std::begin(values1), std::end(values1), uc::jni::begin(elems));
 
             TEST_ASSERT(!std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
         }
-        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
+        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_const_elements(array.get()))));
 
         {
             auto elems = uc::jni::get_elements(array);
             std::copy(std::begin(values2), std::end(values2), uc::jni::begin(elems));
             uc::jni::set_abort(elems);
         }
-        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
-
-        {
-            auto elems = uc::jni::get_elements(array, true);
-            std::copy(std::begin(values2), std::end(values2), uc::jni::begin(elems));
-        }
-        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
-
+        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_const_elements(array))));
 
         {
             auto elems = uc::jni::get_elements(array);
             std::copy(std::begin(values2), std::end(values2), uc::jni::begin(elems));
 
-            TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
+            TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_const_elements(array))));
             uc::jni::commit(elems);
-            TEST_ASSERT(std::equal(std::begin(values2), std::end(values2), uc::jni::begin(uc::jni::get_elements(array.get()))));
+            TEST_ASSERT(std::equal(std::begin(values2), std::end(values2), uc::jni::begin(uc::jni::get_const_elements(array))));
         }
     });
-LOGD << "###############################################";
+}
+
+
+//*************************************************************************************************
+// Test GetObjectArrayElement() / SetObjectArrayElement()
+//*************************************************************************************************
+JNI(void, testObjectElements)(JNIEnv *env, jobject thiz)
+{
+    uc::jni::exception_guard([&] {
+
+        std::vector<std::string> values1 { "abc", "defg", "hijk", "lmnopqr" };
+        std::vector<std::string> values2 { "ABC", "DEFG", "HIJK", "LMNOPQR" };
+
+        auto array = uc::jni::new_array<jstring>(4);
+        TEST_ASSERT_EQUALS(4, env->GetArrayLength(array.get()));
+        TEST_ASSERT_EQUALS(4, uc::jni::length(array));
+
+        {
+            int i = 0;
+            for (auto&& v : values1) {
+                uc::jni::set(array, i++, uc::jni::to_jstring(v));
+            }
+            i = 0;
+            for (auto&& v : values1) {
+                auto jstr = uc::jni::get(array, i++);
+                TEST_ASSERT_EQUALS(v, uc::jni::to_string(jstr));
+            }
+        }
+
+        {
+            uc::jni::set_region(array, 0, 4, values2.begin(), [](auto&& str) { return uc::jni::to_jstring(str).release(); });
+
+            std::vector<std::string> values3(4);
+            uc::jni::get_region(array, 0, 4, values3.begin(), [](auto&& str) { return uc::jni::to_string(str); });
+            
+            TEST_ASSERT_EQUALS(values2, values3);
+        }
+    });
+}
+
+//*************************************************************************************************
+// Test uc::jni::join()
+//*************************************************************************************************
+JNI(void, testStringBuffer)(JNIEnv *env, jobject thiz)
+{
+    uc::jni::exception_guard([&] {
+        {
+            auto j = uc::jni::join();
+            TEST_ASSERT_EQUALS(0, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string(), uc::jni::to_string(j));
+        }
+        {
+            auto j = uc::jni::join("");
+            TEST_ASSERT_EQUALS(0, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string(), uc::jni::to_string(j));
+        }
+        {
+            auto j = uc::jni::join("a");
+            TEST_ASSERT_EQUALS(1, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string("a"), uc::jni::to_string(j));
+        }
+        {
+            auto j = uc::jni::join(u"a");
+            TEST_ASSERT_EQUALS(1, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string("a"), uc::jni::to_string(j));
+        }
+        {
+            auto j = uc::jni::join(std::string());
+            TEST_ASSERT_EQUALS(0, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string(), uc::jni::to_string(j));
+        }
+        {
+            auto j = uc::jni::join(std::string("xyz"));
+            TEST_ASSERT_EQUALS(3, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string("xyz"), uc::jni::to_string(j));
+        }
+        {
+            auto j = uc::jni::join(std::u16string());
+            TEST_ASSERT_EQUALS(0, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string(), uc::jni::to_string(j));
+        }
+        {
+            auto j = uc::jni::join(std::u16string(u"123"));
+            TEST_ASSERT_EQUALS(3, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string("123"), uc::jni::to_string(j));
+        }
+
+        auto j0 = uc::jni::join("abc", "def", "ghi");
+        TEST_ASSERT_EQUALS(9, uc::jni::string_traits<char>::length(env, j0.get()));
+        TEST_ASSERT_EQUALS(std::string("abcdefghi"), uc::jni::to_string(j0));
+        TEST_ASSERT_EQUALS(std::u16string(u"abcdefghi"), uc::jni::to_u16string(j0));
+
+        auto j1 = uc::jni::join(std::string("abc"), "def", "ghi");
+        TEST_ASSERT_EQUALS(9, uc::jni::string_traits<char>::length(env, j1.get()));
+        TEST_ASSERT_EQUALS(std::string("abcdefghi"), uc::jni::to_string(j1));
+        TEST_ASSERT_EQUALS(std::u16string(u"abcdefghi"), uc::jni::to_u16string(j1));
+
+        auto j2 = uc::jni::join(j0, ", ", j1);
+        TEST_ASSERT_EQUALS(20, uc::jni::string_traits<char>::length(env, j2.get()));
+        TEST_ASSERT_EQUALS(std::string("abcdefghi, abcdefghi"), uc::jni::to_string(j2));
+
+        auto j3 = uc::jni::join("123, ", j0, u", ABCD, ", std::string("!#$%"), std::u16string(u", qwerty"));
+        TEST_ASSERT_EQUALS(34, uc::jni::string_traits<char>::length(env, j3.get()));
+        TEST_ASSERT_EQUALS(std::string("123, abcdefghi, ABCD, !#$%, qwerty"), uc::jni::to_string(j3));
+
+    });
+}
+
+//*************************************************************************************************
+// Test uc::jni::register_natives()
+//*************************************************************************************************
+jboolean returnTrue(JNIEnv* env, jobject obj)
+{
+    return JNI_TRUE;
+}
+jstring returnString(JNIEnv* env, jobject obj, jstring str)
+{
+    // return uc::jni::to_jstring("[" + uc::jni::to_string(str) + "] received.").release();
+    return uc::jni::join("[", str, "] received.").release();
+}
+jint plus(JNIEnv* env, jobject obj, jint i, jint j)
+{
+    return i + j;
+}
+JNI(void, testRegisterNatives)(JNIEnv *env, jobject thiz)
+{
+    uc::jni::exception_guard([&] {
+        {
+            auto method = uc::jni::make_native_method("returnTrueMethod", &returnTrue);
+            TEST_ASSERT_EQUALS(std::string("()Z"), method.signature);
+            TEST_ASSERT(uc::jni::register_natives<UcJniTest>(&method, 1));
+        }
+        {
+            auto method = uc::jni::make_native_method("returnStringMethod", &returnString);
+            TEST_ASSERT_EQUALS(std::string("(Ljava/lang/String;)Ljava/lang/String;"), method.signature);
+        }
+        {
+            auto method = uc::jni::make_native_method("plusMethod", &plus);
+            TEST_ASSERT_EQUALS(std::string("(II)I"), method.signature);
+        }
+        JNINativeMethod m[]{
+            uc::jni::make_native_method("returnStringMethod", &returnString),
+            uc::jni::make_native_method("plusMethod", &plus)
+        };
+        TEST_ASSERT(uc::jni::register_natives<UcJniTest>(m));
+    });
+}
+
+//*************************************************************************************************
+// Test Monitor API
+//*************************************************************************************************
+JNI(void, testMonitor)(JNIEnv *env, jobject thiz, jobject point)
+{
+    uc::jni::exception_guard([&] {
+std::this_thread::sleep_for(std::chrono::seconds(1));
+        DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+        auto s = uc::jni::synchronized(point);
+        auto x = uc::jni::make_field<Point, int>("x");
+        x.set(point, x.get(point) + 1);
+    });
+}
+JNI(void, testMonitorAsync)(JNIEnv *env, jobject thiz, jobject p)
+{
+    uc::jni::exception_guard([&] {
+        std::thread t([point = uc::jni::make_global(p)] {
+            DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+            auto s = uc::jni::synchronized(point);
+            auto x = uc::jni::make_field<Point, int>("x");
+            x.set(point, x.get(point) + 1);
+        });
+        t.detach();
+    });
+}
+        
+//*************************************************************************************************
+// Test Direct byte buffer API
+//*************************************************************************************************
+JNI(void, testDirectBuffer)(JNIEnv *env, jobject thiz, jobject point)
+{
+    uc::jni::exception_guard([&] {
+        char buf[256] {};
+        auto buffer = uc::jni::new_direct_byte_buffer(buf, sizeof(buf));
+
+        LOGD << "  $$$$$$ " << getClassName(uc::jni::get_object_class(buffer));
+
+        auto intBuffer = uc::jni::new_direct_buffer<int32_t>(100);
+        LOGD << "  $$$$$$ " << env->GetDirectBufferAddress(intBuffer.get()) << ", " << env->GetDirectBufferCapacity(intBuffer.get());
+
+        TEST_ASSERT_EQUALS(100, uc::jni::length(intBuffer));
+        TEST_ASSERT_EQUALS(100 * sizeof(int32_t), env->GetDirectBufferCapacity(intBuffer.get()));
+        TEST_ASSERT_EQUALS(env->GetDirectBufferAddress(intBuffer.get()), uc::jni::address(intBuffer));
+       
+    });
+}
+
+//*************************************************************************************************
+// Test Custom Traits
+//*************************************************************************************************
+#include <deque>
+
+namespace uc {
+namespace jni {
+template <> struct type_traits<std::deque<std::string>>
+{
+    using jvalue_type = uc::jni::array<jstring>;
+    using jarray_type = uc::jni::array<jvalue_type>;
+    static constexpr decltype(auto) signature() noexcept
+    {
+        return type_traits<jvalue_type>::signature();
+    }
+    static std::deque<std::string> c_cast(jvalue_type v)
+    {
+        const auto len = length(v);
+        std::deque<std::string> ret(len);
+        auto array = uc::jni::make_local(v);
+        get_region(v, 0, len, ret.begin(), [](auto&& jvalue) { return uc::jni::to_string(jvalue); });
+        return ret;
+    }
+    static jvalue_type j_cast(const std::deque<std::string>& v)
+    {
+        const auto len = static_cast<jsize>(v.size());
+        auto ret = new_array<jstring>(len);
+        set_region(ret, 0, len, v.begin(), [](auto&& value) { return to_jstring(value).release(); });
+        return ret.release(); 
+    }
+};
+}
+}
+
+JNI(void, testCustomTraits)(JNIEnv *env, jobject thiz)
+{
+    uc::jni::exception_guard([&] {
+
+        auto getFieldStringArray = uc::jni::make_method<UcJniTest, std::deque<std::string>()>("getFieldStringArray");
+        auto setFieldStringArray = uc::jni::make_method<UcJniTest, void(std::deque<std::string>)>("setFieldStringArray");
+
+        const std::deque<std::string> answer { "abc", "defg", "hijk", "lmnopqr" };
+
+        setFieldStringArray(thiz, answer);
+
+        auto values = getFieldStringArray(thiz);
+        TEST_ASSERT_EQUALS(answer, values);
+    });
 }
