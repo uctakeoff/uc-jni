@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.0.1"
-#define UC_JNI_VERSION_NUM 0x010001
+#define UC_JNI_VERSION "1.1.0"
+#define UC_JNI_VERSION_NUM 0x010100
 
 #include <jni.h>
 #include <memory>
