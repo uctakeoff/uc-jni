@@ -67,14 +67,14 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
         TEST_ASSERT_EQUALS(y.get(p0), 34);      // p0.y == 34
 
         // Calling Instance Methods
-        TEST_ASSERT(equals(p0, p1.get()));      // p0.equals(p1)
-        TEST_ASSERT(!equals(p1, p2.get()));     // !p1.equals(p2)
+        TEST_ASSERT(equals(p0, p1));            // p0.equals(p1)
+        TEST_ASSERT(!equals(p1, p2));           // !p1.equals(p2)
 
         x.set(p1, 123);                         // p1.x = 123;
         y.set(p1, 456);                         // p1.y = 456;
 
-        TEST_ASSERT(!equals(p0, p1.get()));
-        TEST_ASSERT(equals(p1, p2.get()));
+        TEST_ASSERT(!equals(p0, p1));
+        TEST_ASSERT(equals(p1, p2));
 
         offset(p0, 100, 200);                   // p0.offset(100, 200);
         TEST_ASSERT_EQUALS(x.get(p0), 112);

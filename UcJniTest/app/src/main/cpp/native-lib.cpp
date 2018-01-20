@@ -112,14 +112,14 @@ JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
         TEST_ASSERT_EQUALS(y.get(p1), 34);
         TEST_ASSERT_EQUALS(y.get(p2), 456);
 
-        TEST_ASSERT(equals(p0, p1.get()));
-        TEST_ASSERT(!equals(p1, p2.get()));
+        TEST_ASSERT(equals(p0, p1));
+        TEST_ASSERT(!equals(p1, p2));
 
         x.set(p1, 123);
         y.set(p1, 456);
 
-        TEST_ASSERT(!equals(p0, p1.get()));
-        TEST_ASSERT(equals(p1, p2.get()));
+        TEST_ASSERT(!equals(p0, p1));
+        TEST_ASSERT(equals(p1, p2));
 
         offset(p0, 100, 200);
         TEST_ASSERT_EQUALS(x.get(p0), 112);
@@ -200,6 +200,26 @@ JNI(void, testResolveClass)(JNIEnv *env, jobject thiz)
             }
             auto end = clock_type::now();
             LOGD << "## uc::jni::get_class()  : " << duration_cast<microseconds>(end - start).count() << "us";
+        }
+
+
+        std::string str;
+        str.reserve(loopCount*20);
+        {
+            auto start = clock_type::now();
+            for (size_t i = 0; i < loopCount; ++i) {
+                str.append(uc::jni::type_traits<jobjectArray>::signature().c_str());
+            }
+            auto end = clock_type::now();
+            LOGD << "## uc::jni::type_traits<T>::signature().c_str()  : " << duration_cast<microseconds>(end - start).count() << "us";
+        }
+        {
+            auto start = clock_type::now();
+            for (size_t i = 0; i < loopCount; ++i) {
+                str.append(uc::jni::get_signature<jobjectArray>());
+            }
+            auto end = clock_type::now();
+            LOGD << "## uc::jni::get_signature<T>()  : " << duration_cast<microseconds>(end - start).count() << "us";
         }
 
     });
@@ -305,14 +325,14 @@ JNI(void, testToJstring)(JNIEnv *env, jobject thiz)
         {
             auto field = uc::jni::make_static_field<UcJniTest, jstring>("staticFieldString");
             auto str = uc::jni::to_jstring("Hello World!");
-            logd(__func__, str.get());
-            TEST_ASSERT(compareJStrings(str, field.get().get()) == 0);
+            logd(__func__, str);
+            TEST_ASSERT(compareJStrings(str, field.get()) == 0);
         }
         {
             auto field = uc::jni::make_static_field<UcJniTest, jstring>("staticFieldStringJp");
             auto str = uc::jni::to_jstring(u"こんにちは、世界！");
-            logd(__func__, str.get());
-            TEST_ASSERT(compareJStrings(str, field.get().get()) == 0);
+            logd(__func__, str);
+            TEST_ASSERT(compareJStrings(str, field.get()) == 0);
         }
     });
 }
@@ -663,7 +683,7 @@ template<typename T, typename JArray> void testArrayTransform(const char* fieldN
 {
     auto field = uc::jni::make_field<UcJniTest, JArray>(fieldName);
 
-    field.set(thiz, uc::jni::to_jarray(value).get());
+    field.set(thiz, uc::jni::to_jarray(value));
 
     auto array = field.get(thiz);
     TEST_ASSERT_EQUALS(value.size(), uc::jni::length(array));
@@ -689,43 +709,47 @@ DEFINE_ARRAY_TRANSFORM_TEST(std::u16string, uc::jni::array<jstring>, String16Arr
 JNI(void, testPrimitiveElements)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
-        auto array = uc::jni::new_array<jint>(10);
+        const std::vector<int> values1 = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19};
+        const std::vector<int> values2 = {20, 21, 22, 23, 24, 25, 26, 27, 28, 29};
 
+        auto array = uc::jni::new_array<jint>(10);
+        TEST_ASSERT_EQUALS(10, env->GetArrayLength(array.get()));
         TEST_ASSERT_EQUALS(10, uc::jni::length(array));
 
-        const int values1[] = {10, 11, 12, 13, 14, 15, 16, 17, 18, 19};
-        const int values2[] = {20, 21, 22, 23, 24, 25, 26, 27, 28, 29};
-
         {
-            uc::jni::set_region(array, 0, 10, values2);
+            uc::jni::set_region(array, 0, 10, values2.data());
 
-            int values3[10]{};
-            uc::jni::get_region(array, 0, 10, values3);
-            TEST_ASSERT(std::equal(std::begin(values2), std::end(values2), std::begin(values3)));
+            std::vector<int> values3(10);
+            uc::jni::get_region(array, 0, 10, values3.data());
+            TEST_ASSERT_EQUALS(values2, values3);
+        }
+        {
+            auto values3 = uc::jni::to_vector(array);
+            TEST_ASSERT_EQUALS(values2, values3);
         }
 
         {
             auto elems = uc::jni::get_elements(array.get());
-            std::copy(std::begin(values1), std::end(values1), uc::jni::begin(elems));
+            std::copy(values1.begin(), values1.end(), uc::jni::begin(elems));
 
-            TEST_ASSERT(!std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_elements(array.get()))));
+            TEST_ASSERT(!std::equal(values1.begin(), values1.end(), uc::jni::begin(uc::jni::get_elements(array))));
         }
-        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_const_elements(array.get()))));
+        TEST_ASSERT(std::equal(values1.begin(), values1.end(), uc::jni::begin(uc::jni::get_const_elements(array.get()))));
 
         {
             auto elems = uc::jni::get_elements(array);
-            std::copy(std::begin(values2), std::end(values2), uc::jni::begin(elems));
+            std::copy(values2.begin(), values2.end(), uc::jni::begin(elems));
             uc::jni::set_abort(elems);
         }
-        TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_const_elements(array))));
+        TEST_ASSERT(std::equal(values1.begin(), values1.end(), uc::jni::begin(uc::jni::get_const_elements(array))));
 
         {
             auto elems = uc::jni::get_elements(array);
-            std::copy(std::begin(values2), std::end(values2), uc::jni::begin(elems));
+            std::copy(values2.begin(), values2.end(), uc::jni::begin(elems));
 
-            TEST_ASSERT(std::equal(std::begin(values1), std::end(values1), uc::jni::begin(uc::jni::get_const_elements(array))));
+            TEST_ASSERT(std::equal(values1.begin(), values1.end(), uc::jni::begin(uc::jni::get_const_elements(array))));
             uc::jni::commit(elems);
-            TEST_ASSERT(std::equal(std::begin(values2), std::end(values2), uc::jni::begin(uc::jni::get_const_elements(array))));
+            TEST_ASSERT(std::equal(values2.begin(), values2.end(), uc::jni::begin(uc::jni::get_const_elements(array))));
         }
     });
 }
@@ -763,6 +787,11 @@ JNI(void, testObjectElements)(JNIEnv *env, jobject thiz)
             std::vector<std::string> values3(4);
             uc::jni::get_region(array, 0, 4, values3.begin(), [](auto&& str) { return uc::jni::to_string(str); });
             
+            TEST_ASSERT_EQUALS(values2, values3);
+        }
+        {
+            jobjectArray objArray = array.get();
+            auto values3 = uc::jni::to_vector<std::string>(objArray);
             TEST_ASSERT_EQUALS(values2, values3);
         }
     });
@@ -927,6 +956,12 @@ JNI(void, testDirectBuffer)(JNIEnv *env, jobject thiz, jobject point)
 // Test Custom Traits
 //*************************************************************************************************
 #include <deque>
+#include <map>
+DEFINE_JCLASS_ALIAS(HashMap, java/util/HashMap);
+DEFINE_JCLASS_ALIAS(MapEntry, java/util/Map$Entry);
+DEFINE_JCLASS_ALIAS(Set, java/util/Set);
+DEFINE_JCLASS_ALIAS(Iterator, java/util/Iterator);
+DEFINE_JCLASS_ALIAS(Integer, java/lang/Integer);
 
 namespace uc {
 namespace jni {
@@ -954,6 +989,50 @@ template <> struct type_traits<std::deque<std::string>>
         return ret.release(); 
     }
 };
+
+template <> struct type_traits<std::map<std::string, int>>
+{
+    using jvalue_type = HashMap;
+    using jarray_type = uc::jni::array<jvalue_type>;
+    static constexpr decltype(auto) signature() noexcept
+    {
+        return type_traits<jvalue_type>::signature();
+    }
+    static std::map<std::string, int> c_cast(jvalue_type value)
+    {
+        static auto entrySet = make_method<HashMap, Set()>("entrySet");
+        static auto iterator = make_method<Set, Iterator()>("iterator");
+        static auto hasNext = make_method<Iterator, bool()>("hasNext");
+        static auto next = make_method<Iterator, jobject()>("next");
+        static auto getKey = make_method<MapEntry, jobject()>("getKey");
+        static auto getValue = make_method<MapEntry, jobject()>("getValue");
+        static auto intValue = make_method<Integer, int()>("intValue");
+
+
+        std::map<std::string, int> ret;
+        auto map = uc::jni::make_local(value);
+        auto set = entrySet(map);
+        auto itr = iterator(set);
+        while (hasNext(itr)) {
+            auto e = next(itr);
+            ret.emplace(to_string(static_cast<jstring>(getKey(e).get())), intValue(getValue(e)));
+        }
+        return ret;
+    }
+    static jvalue_type j_cast(const std::map<std::string, int>& value)
+    {
+        static auto newInteger = make_constructor<Integer(int)>();
+        static auto newHashMap = make_constructor<HashMap()>();
+        static auto put = make_method<HashMap, jobject(jobject, jobject)>("put");
+        
+        auto ret = newHashMap();
+        for (auto&& v : value) {
+            put(ret, to_jstring(v.first), newInteger(v.second));
+        }
+        return ret.release(); 
+    }
+};
+
 }
 }
 
@@ -970,5 +1049,22 @@ JNI(void, testCustomTraits)(JNIEnv *env, jobject thiz)
 
         auto values = getFieldStringArray(thiz);
         TEST_ASSERT_EQUALS(answer, values);
+    });
+}
+
+JNI(void, testCustomTraits2)(JNIEnv *env, jobject thiz)
+{
+    uc::jni::exception_guard([&] {
+
+        auto getHashMap = uc::jni::make_method<UcJniTest, std::map<std::string, int>()>("getHashMap");
+        auto putHashMap = uc::jni::make_method<UcJniTest, void(std::map<std::string, int>)>("putHashMap");
+
+        auto map = getHashMap(thiz);
+
+        for (auto&& v : map) {
+            LOGD << v.first << ", " << v.second;
+        }
+        map.emplace("international", 13);
+        putHashMap(thiz, map);
     });
 }

@@ -7,6 +7,9 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import static org.junit.Assert.*;
 /**
  * Created by ushi on 2018/01/07.
@@ -285,4 +288,20 @@ public class UcJniTest {
     @Test public native void testDirectBuffer() throws Exception;
 
     @Test public native void testCustomTraits() throws Exception;
+    @Test public native void testCustomTraits2() throws Exception;
+
+    HashMap getHashMap()
+    {
+        HashMap<String, Integer> v = new HashMap<>();
+        v.put("big", 3);
+        v.put("long", 4);
+        v.put("good", 5);
+        return v;
+    }
+    void putHashMap(HashMap<String, Integer> hashMap)
+    {
+        for (Map.Entry<String, Integer> v : hashMap.entrySet()) {
+            Log.d("UcJniTest", v.getKey() + " : " + v.getValue());
+        }
+    }
 }
