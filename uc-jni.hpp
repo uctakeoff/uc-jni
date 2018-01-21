@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.1.0"
-#define UC_JNI_VERSION_NUM 0x010100
+#define UC_JNI_VERSION "1.1.1"
+#define UC_JNI_VERSION_NUM 0x010101
 
 #include <jni.h>
 #include <memory>
@@ -182,13 +182,13 @@ private:
 template <typename T> constexpr decltype(auto) fqcn() noexcept
 {
     return std::remove_pointer_t<T>::fqcn();
-};
-#define DEFINE_FQDN(type, sign) template <> constexpr decltype(auto) fqcn<type>() noexcept { return #sign; }
-DEFINE_FQDN(jobject,    java/lang/Object)
-DEFINE_FQDN(jstring,    java/lang/String)
-DEFINE_FQDN(jclass,     java/lang/Class)
-DEFINE_FQDN(jthrowable, java/lang/Throwable)
-#undef DEFINE_FQDN
+}
+#define DEFINE_FQCN(type, sign) template <> constexpr decltype(auto) fqcn<type>() noexcept { return #sign; }
+DEFINE_FQCN(jobject,    java/lang/Object)
+DEFINE_FQCN(jstring,    java/lang/String)
+DEFINE_FQCN(jclass,     java/lang/Class)
+DEFINE_FQCN(jthrowable, java/lang/Throwable)
+#undef DEFINE_FQCN
 
 inline local_ref<jclass> find_class(const char* fqcn)
 {

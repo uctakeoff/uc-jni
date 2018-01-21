@@ -78,7 +78,7 @@ JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
 
         DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
-        auto makePoint = uc::jni::make_constructor<Point(int,int)>();
+        auto newPoint = uc::jni::make_constructor<Point(int,int)>();
 
         auto x = uc::jni::make_field<Point, int>("x");
         auto y = uc::jni::make_field<Point, int>("y");
@@ -88,14 +88,14 @@ JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
         auto offset = uc::jni::make_method<Point, void(int,int)>("offset");
 
         // Accessors do not use any extra memory.
-        TEST_ASSERT_EQUALS(sizeof(makePoint), sizeof(jmethodID));
+        TEST_ASSERT_EQUALS(sizeof(newPoint), sizeof(jmethodID));
         TEST_ASSERT_EQUALS(sizeof(x), sizeof(jfieldID));
         TEST_ASSERT_EQUALS(sizeof(offset), sizeof(jmethodID));
 
 
-        auto p0 = makePoint(12, 34);
-        auto p1 = makePoint(12, 34);
-        auto p2 = makePoint(123, 456);
+        auto p0 = newPoint(12, 34);
+        auto p1 = newPoint(12, 34);
+        auto p2 = newPoint(123, 456);
 
         LOGD << "#########################################";
 //        LOGD << "####" << getClassName(p0);
