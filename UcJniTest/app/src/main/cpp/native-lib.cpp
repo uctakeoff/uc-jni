@@ -374,14 +374,6 @@ JNI(void, testToString)(JNIEnv *env, jobject thiz)
             TEST_ASSERT_EQUALS(valueJp, str);
         }
 
-        static auto testDoNothing = uc::jni::make_method<UcJniTest, void(std::string)>("testDoNothing");
-        for (int i = 0; i < 1024; ++i) {
-            auto js = uc::jni::to_jstring("tesst");
-            js.release();
-            std::string str = "test";
-            testDoNothing(thiz, str);
-        }
-
         {
             const std::string jpstr = u8"日本語で UTF8 文字列を書き、これを jstring に変換してまた戻したときに、きちんと戻るかどうかテストする。その逆もテストする。";
             const std::u16string jpstr16 = u"日本語で UTF8 文字列を書き、これを jstring に変換してまた戻したときに、きちんと戻るかどうかテストする。その逆もテストする。";

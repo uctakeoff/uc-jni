@@ -6,7 +6,7 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.1.2"
+#define UC_JNI_VERSION "1.1.3"
 #define UC_JNI_VERSION_NUM 0x010101
 
 #include <jni.h>
@@ -925,7 +925,7 @@ template <typename JType, typename T> static_field<JType, T> make_static_field(c
 template <typename...> struct method;
 template <typename JType, typename... Args> struct method<JType, void(Args...)> 
 {
-    template<typename JObj, typename... Ts> void operator()(const JObj& obj, const Ts&... args) noexcept
+    template<typename JObj, typename... Ts> void operator()(const JObj& obj, const Ts&... args) const noexcept
     {
         function_traits<void>::call_method(env(), to_native_ref(obj), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -935,7 +935,7 @@ template <typename JType, typename... Args> struct method<JType, void(Args...)>
 };
 template <typename JType, typename R, typename... Args> struct method<JType, R(Args...)> 
 {
-    template<typename JObj, typename... Ts> decltype(auto) operator()(const JObj& obj, const Ts&... args) noexcept
+    template<typename JObj, typename... Ts> decltype(auto) operator()(const JObj& obj, const Ts&... args) const noexcept
     {
         auto result = function_traits<typename type_traits<R>::jvalue_type>::call_method(env(), to_native_ref(obj), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -953,7 +953,7 @@ template <typename JType, typename Fun> method<JType, Fun> make_method(const cha
 template <typename...> struct non_virtual_method;
 template <typename JType, typename... Args> struct non_virtual_method<JType, void(Args...)> 
 {
-    template<typename JObj, typename... Ts> void operator()(const JObj& obj, const Ts&... args) noexcept
+    template<typename JObj, typename... Ts> void operator()(const JObj& obj, const Ts&... args) const noexcept
     {
         function_traits<void>::call_non_virtual_method(env(), to_native_ref(obj), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -963,7 +963,7 @@ template <typename JType, typename... Args> struct non_virtual_method<JType, voi
 };
 template <typename JType, typename R, typename... Args> struct non_virtual_method<JType, R(Args...)> 
 {
-    template<typename JObj, typename... Ts> decltype(auto) operator()(const JObj& obj, const Ts&... args) noexcept
+    template<typename JObj, typename... Ts> decltype(auto) operator()(const JObj& obj, const Ts&... args) const noexcept
     {
         auto result = function_traits<typename type_traits<R>::jvalue_type>::call_non_virtual_method(env(), to_native_ref(obj), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -984,7 +984,7 @@ template <typename JType, typename Fun> non_virtual_method<JType, Fun> make_non_
 template <typename...> struct static_method;
 template <typename JType, typename... Args> struct static_method<JType, void(Args...)> 
 {
-    template<typename... Ts> void operator()(const Ts&... args) noexcept
+    template<typename... Ts> void operator()(const Ts&... args) const noexcept
     {
         function_traits<void>::call_static_method(env(), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -994,7 +994,7 @@ template <typename JType, typename... Args> struct static_method<JType, void(Arg
 };
 template <typename JType, typename R, typename... Args> struct static_method<JType, R(Args...)>
 {
-    template<typename... Ts> decltype(auto) operator()(const Ts&... args) noexcept
+    template<typename... Ts> decltype(auto) operator()(const Ts&... args) const noexcept
     {
         auto result = function_traits<typename type_traits<R>::jvalue_type>::call_static_method(env(), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -1020,7 +1020,7 @@ template <typename JType, typename... Args> struct constructor<JType(Args...)>
     {
         return get_method_id<JType, void(Args...)>("<init>");
     }
-    template<typename... Ts> local_ref<JType> operator()(const Ts&... args) noexcept
+    template<typename... Ts> local_ref<JType> operator()(const Ts&... args) const noexcept
     {
         auto result = env()->NewObject(get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
