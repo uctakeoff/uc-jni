@@ -6,7 +6,7 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.1.1"
+#define UC_JNI_VERSION "1.1.2"
 #define UC_JNI_VERSION_NUM 0x010101
 
 #include <jni.h>
@@ -488,10 +488,10 @@ template <typename T, size_t N, typename Traits = string_traits<T>> local_ref<js
 
 template <typename T, typename JStr, typename Traits = string_traits<T>> std::basic_string<T> to_basic_string(const JStr& str)
 {
-    // return std::basic_string<T>(get_chars<T,Traits>(to_native_ref(str)).get(), Traits::length(env(), to_native_ref(str)));
-    const auto len = Traits::length(env(), to_native_ref(str));
-    std::basic_string<T> ret(len, 0);
-    Traits::get_region(env(), to_native_ref(str), 0, len, &ret[0]);
+    auto e = env();
+    auto jstr = to_native_ref(str);
+    std::basic_string<T> ret(Traits::length(e, jstr), 0);
+    Traits::get_region(e, jstr, 0, e->GetStringLength(jstr), &ret[0]);
     return  ret;
 }
 template <typename JStr> std::string to_string(const JStr& str)

@@ -373,6 +373,28 @@ JNI(void, testToString)(JNIEnv *env, jobject thiz)
             auto str = uc::jni::to_u16string(jstr);
             TEST_ASSERT_EQUALS(valueJp, str);
         }
+
+        static auto testDoNothing = uc::jni::make_method<UcJniTest, void(std::string)>("testDoNothing");
+        for (int i = 0; i < 1024; ++i) {
+            auto js = uc::jni::to_jstring("tesst");
+            js.release();
+            std::string str = "test";
+            testDoNothing(thiz, str);
+        }
+
+        {
+            const std::string jpstr = u8"日本語で UTF8 文字列を書き、これを jstring に変換してまた戻したときに、きちんと戻るかどうかテストする。その逆もテストする。";
+            const std::u16string jpstr16 = u"日本語で UTF8 文字列を書き、これを jstring に変換してまた戻したときに、きちんと戻るかどうかテストする。その逆もテストする。";
+
+            auto jstr1 = uc::jni::to_jstring(jpstr);
+            TEST_ASSERT_EQUALS(jpstr,   uc::jni::to_string(jstr1));
+            TEST_ASSERT_EQUALS(jpstr16, uc::jni::to_u16string(jstr1));
+
+            auto jstr2 = uc::jni::to_jstring(jpstr16);
+            TEST_ASSERT_EQUALS(jpstr,   uc::jni::to_string(jstr2));
+            TEST_ASSERT_EQUALS(jpstr16, uc::jni::to_u16string(jstr2));
+        }
+
     });
 }
 
@@ -556,6 +578,16 @@ template<typename T> void testStaticField(const char* fieldName, const T& value1
     field.set(value2);
     TEST_ASSERT_EQUALS(value2, field.get());
     TEST_ASSERT_NOT_EQUALS(value1, field.get());
+
+    for (int i = 0; i < 1024; ++i) {
+        field.set(value1);
+        auto v = field.get();
+        TEST_ASSERT_EQUALS(value1, v);
+
+        field.set(value2);
+        auto v2 = field.get();
+        TEST_ASSERT_EQUALS(value2, v2);
+    }
 }
 
 //*************************************************************************************************
@@ -571,6 +603,16 @@ template<typename T> void testField(const char* fieldName, jobject thiz, const T
     field.set(thiz, value2);
     TEST_ASSERT_EQUALS(value2, field.get(thiz));
     TEST_ASSERT_NOT_EQUALS(value1, field.get(thiz));
+
+    for (int i = 0; i < 1024; ++i) {
+        field.set(thiz, value1);
+        auto v = field.get(thiz);
+        TEST_ASSERT_EQUALS(value1, v);
+
+        field.set(thiz, value2);
+        auto v2 = field.get(thiz);
+        TEST_ASSERT_EQUALS(value2, v2);
+    }
 }
 
 //*************************************************************************************************
@@ -596,6 +638,16 @@ template<typename T> void testStaticMethod(const char* fieldName,
 
     TEST_ASSERT_EQUALS(value2, getter());
     TEST_ASSERT_NOT_EQUALS(value1, getter());
+
+    for (int i = 0; i < 1024; ++i) {
+        setter(value1);
+        auto v = getter();
+        TEST_ASSERT_EQUALS(value1, v);
+
+        setter(value2);
+        auto v2 = getter();
+        TEST_ASSERT_EQUALS(value2, v2);
+    }
 }
 
 //*************************************************************************************************
@@ -622,6 +674,16 @@ template<typename T> void testMethod(const char* fieldName,
 
     TEST_ASSERT_EQUALS(value2, getter(thiz));
     TEST_ASSERT_NOT_EQUALS(value1, getter(thiz));
+
+    for (int i = 0; i < 1024; ++i) {
+        setter(thiz, value1);
+        auto v = getter(thiz);
+        TEST_ASSERT_EQUALS(value1, v);
+
+        setter(thiz, value2);
+        auto v2 = getter(thiz);
+        TEST_ASSERT_EQUALS(value2, v2);
+    }
 }
 
 //*************************************************************************************************
@@ -668,7 +730,7 @@ DEFINE_FIELD_AND_METHOD_TEST(std::vector<int>, IntArray,  INT_ARRAY_TEST_VALUE1,
 DEFINE_FIELD_AND_METHOD_TEST(std::vector<jchar>, CharArray,  CHAR_ARRAY_TEST_VALUE1, CHAR_ARRAY_TEST_VALUE2)
 
 #define STRING_ARRAY_TEST_VALUE1 std::vector<std::string> { "abc", "defg", "hijk", "lmnopqr" }
-#define STRING_ARRAY_TEST_VALUE2 std::vector<std::string> { "ABC", "DEFG", "HIJK", "LMNOPQR" }
+#define STRING_ARRAY_TEST_VALUE2 std::vector<std::string> { u8"Hello", u8"World!", u8"こんにちは", u8"世界" }
 DEFINE_FIELD_AND_METHOD_TEST(std::vector<std::string>, StringArray,  STRING_ARRAY_TEST_VALUE1, STRING_ARRAY_TEST_VALUE2)
 
 #define STRING16_ARRAY_TEST_VALUE1 std::vector<std::u16string> { u"世界", u"こんにちは", u"World!", u"Hello" }

@@ -304,4 +304,8 @@ public class UcJniTest {
             Log.d("UcJniTest", v.getKey() + " : " + v.getValue());
         }
     }
+
+    void testDoNothing(String string) {
+        // do nothing.
+    }
 }
