@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.1.3"
-#define UC_JNI_VERSION_NUM 0x010101
+#define UC_JNI_VERSION "1.1.4"
+#define UC_JNI_VERSION_NUM 0x010104
 
 #include <jni.h>
 #include <memory>
@@ -94,6 +94,11 @@ inline JNIEnv* env() noexcept
 // Global and Local References
 //*************************************************************************************************
 
+template <typename T, std::enable_if_t<is_primitive_type<T>::value, std::nullptr_t> = nullptr>
+constexpr T to_native_ref(T obj) noexcept
+{
+    return obj;
+}
 template <typename T, std::enable_if_t<is_derived_from_jobject<T>::value, std::nullptr_t> = nullptr>
 constexpr T to_native_ref(T obj) noexcept
 {
@@ -314,7 +319,7 @@ template<> struct type_traits<type ## Array>\
     using jvalue_type = type ## Array;\
     using jarray_type = array<jvalue_type>;\
     static constexpr jvalue_type c_cast(jvalue_type v) noexcept { return v; }\
-    template<typename V> static constexpr jvalue_type j_cast(const V& v) noexcept { return to_native_ref(v); }\
+    template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }\
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(#sign); }\
 }
 DEFINE_TYPE_TRAITS_A(jboolean, Z);
@@ -347,7 +352,7 @@ template <typename T> struct type_traits<T*>
     using jvalue_type = T*;
     using jarray_type = array<T*>;
     static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
-    template<typename V> static constexpr jvalue_type j_cast(const V& v) noexcept { return to_native_ref(v); }
+    template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("L").append(fqcn<T*>()).append(";"); }
 };
 template <> struct type_traits<jobjectArray>
@@ -355,7 +360,7 @@ template <> struct type_traits<jobjectArray>
     using jvalue_type = jobjectArray;
     using jarray_type = array<jobjectArray>;
     static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
-    template<typename V> static constexpr jvalue_type j_cast(const V& v) noexcept { return to_native_ref(v); }
+    template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(type_traits<jobject>::signature()); }
 };
 template <typename T> struct type_traits<array<T>>
@@ -363,7 +368,7 @@ template <typename T> struct type_traits<array<T>>
     using jvalue_type = array<T>;
     using jarray_type = array<jvalue_type>;
     static decltype(auto) c_cast(jvalue_type v) { return make_local(v); }
-    template<typename V> static constexpr jvalue_type j_cast(const V& v) noexcept { return to_native_ref(v); }
+    template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(type_traits<T>::signature()); }
 };
 
@@ -561,7 +566,7 @@ template<typename T> struct type_traits<std::basic_string<T>>
     using jvalue_type = jstring;
     using jarray_type = array<jvalue_type>;
     static std::basic_string<T> c_cast(jstring v) { return to_basic_string<T>(v); }
-    static jstring j_cast(const std::basic_string<T>& v) { return to_jstring(v).release(); }
+    static decltype(auto) j_cast(const std::basic_string<T>& v) { return to_jstring(v); }
     static constexpr decltype(auto) signature() noexcept { return type_traits<jvalue_type>::signature(); }
 };
 
@@ -581,14 +586,14 @@ template<typename T> struct type_traits<std::basic_string<T>>
 
 #define DEFINE_FIELD_OPERATOR(type, methodType) \
     static type get_field(JNIEnv* e, jobject obj, jfieldID fieldID) noexcept {return static_cast<type>(e->Get##methodType##Field(obj, fieldID));} \
-    static void set_field(JNIEnv* e, jobject obj, jfieldID fieldID, type field) noexcept {e->Set##methodType##Field(obj, fieldID, field);} \
+    template<typename V> static void set_field(JNIEnv* e, jobject obj, jfieldID fieldID, const V& field) noexcept {e->Set##methodType##Field(obj, fieldID, to_native_ref(field));} \
     static type get_static_field(JNIEnv* e, jclass clazz, jfieldID fieldID) noexcept {return static_cast<type>(e->GetStatic##methodType##Field(clazz, fieldID));} \
-    static void set_static_field(JNIEnv* e, jclass clazz, jfieldID fieldID, type field) noexcept {e->SetStatic##methodType##Field(clazz, fieldID, field);}
+    template<typename V> static void set_static_field(JNIEnv* e, jclass clazz, jfieldID fieldID, const V& field) noexcept {e->SetStatic##methodType##Field(clazz, fieldID, to_native_ref(field));}
 
 #define DEFINE_METHOD_OPERATOR(type, methodType) \
-    template<typename... Args> static type call_method(JNIEnv* e, jobject obj, jmethodID methodID, Args... args) noexcept {return static_cast<type>(e->Call##methodType##Method(obj, methodID, args...));}\
-    template<typename... Args> static type call_non_virtual_method(JNIEnv* e, jobject obj, jclass clazz, jmethodID methodID, Args... args) noexcept {return static_cast<type>(e->CallNonvirtual##methodType##Method(obj, clazz, methodID, args...));}\
-    template<typename... Args> static type call_static_method(JNIEnv* e, jclass clazz, jmethodID methodID, Args... args) noexcept {return static_cast<type>(e->CallStatic##methodType##Method(clazz, methodID, args...));}
+    template<typename... Args> static type call_method(JNIEnv* e, jobject obj, jmethodID methodID, const Args&... args) noexcept {return static_cast<type>(e->Call##methodType##Method(obj, methodID, to_native_ref(args)...));}\
+    template<typename... Args> static type call_non_virtual_method(JNIEnv* e, jobject obj, jclass clazz, jmethodID methodID, const Args&... args) noexcept {return static_cast<type>(e->CallNonvirtual##methodType##Method(obj, clazz, methodID, to_native_ref(args)...));}\
+    template<typename... Args> static type call_static_method(JNIEnv* e, jclass clazz, jmethodID methodID, const Args&... args) noexcept {return static_cast<type>(e->CallStatic##methodType##Method(clazz, methodID, to_native_ref(args)...));}
 
 
 template<typename> struct function_traits;
@@ -832,7 +837,7 @@ local_ref<typename type_traits<T>::jarray_type> to_jarray(const std::vector<T>& 
     const auto len = static_cast<jsize>(vec.size());
     auto ret = new_array<typename type_traits<T>::jvalue_type>(len);
     for (jsize i = 0; i < len; ++i) {
-        e->SetObjectArrayElement(ret.get(), i, type_traits<T>::j_cast(vec[i]));
+        e->SetObjectArrayElement(ret.get(), i, to_native_ref(type_traits<T>::j_cast(vec[i])));
     }
     // set_region(ret, 0, len, vec.begin());
     return ret;
@@ -844,7 +849,7 @@ template <typename T> struct type_traits<std::vector<T>>
     using jvalue_type = typename type_traits<T>::jarray_type;
     using jarray_type = array<jvalue_type>;
     static std::vector<T> c_cast(jvalue_type v) { return to_vector<T>(v); }
-    static jvalue_type j_cast(const std::vector<T>& v) { return to_jarray(v).release(); }
+    static decltype(auto) j_cast(const std::vector<T>& v) { return to_jarray(v); }
     static constexpr decltype(auto) signature() noexcept { return type_traits<jvalue_type>::signature(); }
 };
 
@@ -1022,7 +1027,7 @@ template <typename JType, typename... Args> struct constructor<JType(Args...)>
     }
     template<typename... Ts> local_ref<JType> operator()(const Ts&... args) const noexcept
     {
-        auto result = env()->NewObject(get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
+        auto result = env()->NewObject(get_class<JType>(), id, to_native_ref(type_traits<Args>::j_cast(args))...);
         exception_check();
         return make_local(static_cast<JType>(result));
     }

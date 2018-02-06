@@ -78,7 +78,7 @@ JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
 
         DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
-        auto newPoint = uc::jni::make_constructor<Point(int,int)>();
+        const auto newPoint = uc::jni::make_constructor<Point(int,int)>();
 
         auto x = uc::jni::make_field<Point, int>("x");
         auto y = uc::jni::make_field<Point, int>("y");
@@ -387,6 +387,13 @@ JNI(void, testToString)(JNIEnv *env, jobject thiz)
             TEST_ASSERT_EQUALS(jpstr16, uc::jni::to_u16string(jstr2));
         }
 
+
+        // Test : JNI ERROR (app bug): local reference table overflow (max=8388608)
+        static auto testDoNothing = uc::jni::make_method<UcJniTest, void(std::string)>("testDoNothing");
+        for (int i = 0; i < 9000000; ++i) {
+            std::string str = "test";
+            testDoNothing(thiz, str);
+        }
     });
 }
 
