@@ -236,6 +236,7 @@ uc::jni::weak_ref<jstring> weakString{};
 JNI(void, testGlobalRef)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
+//        globalString = uc::jni::to_jstring("Hello World");
         globalString = uc::jni::make_global(uc::jni::to_jstring("Hello World"));
 
         TEST_ASSERT(globalString);
@@ -387,13 +388,14 @@ JNI(void, testToString)(JNIEnv *env, jobject thiz)
             TEST_ASSERT_EQUALS(jpstr16, uc::jni::to_u16string(jstr2));
         }
 
-
+#if 0
         // Test : JNI ERROR (app bug): local reference table overflow (max=8388608)
         static auto testDoNothing = uc::jni::make_method<UcJniTest, void(std::string)>("testDoNothing");
         for (int i = 0; i < 9000000; ++i) {
             std::string str = "test";
             testDoNothing(thiz, str);
         }
+#endif
     });
 }
 
@@ -577,7 +579,7 @@ template<typename T> void testStaticField(const char* fieldName, const T& value1
     field.set(value2);
     TEST_ASSERT_EQUALS(value2, field.get());
     TEST_ASSERT_NOT_EQUALS(value1, field.get());
-
+#if 0
     for (int i = 0; i < 1024; ++i) {
         field.set(value1);
         auto v = field.get();
@@ -587,6 +589,7 @@ template<typename T> void testStaticField(const char* fieldName, const T& value1
         auto v2 = field.get();
         TEST_ASSERT_EQUALS(value2, v2);
     }
+#endif
 }
 
 //*************************************************************************************************
@@ -603,6 +606,7 @@ template<typename T> void testField(const char* fieldName, jobject thiz, const T
     TEST_ASSERT_EQUALS(value2, field.get(thiz));
     TEST_ASSERT_NOT_EQUALS(value1, field.get(thiz));
 
+#if 0
     for (int i = 0; i < 1024; ++i) {
         field.set(thiz, value1);
         auto v = field.get(thiz);
@@ -612,6 +616,7 @@ template<typename T> void testField(const char* fieldName, jobject thiz, const T
         auto v2 = field.get(thiz);
         TEST_ASSERT_EQUALS(value2, v2);
     }
+#endif
 }
 
 //*************************************************************************************************
@@ -638,6 +643,7 @@ template<typename T> void testStaticMethod(const char* fieldName,
     TEST_ASSERT_EQUALS(value2, getter());
     TEST_ASSERT_NOT_EQUALS(value1, getter());
 
+#if 0
     for (int i = 0; i < 1024; ++i) {
         setter(value1);
         auto v = getter();
@@ -647,6 +653,7 @@ template<typename T> void testStaticMethod(const char* fieldName,
         auto v2 = getter();
         TEST_ASSERT_EQUALS(value2, v2);
     }
+#endif
 }
 
 //*************************************************************************************************
@@ -674,6 +681,7 @@ template<typename T> void testMethod(const char* fieldName,
     TEST_ASSERT_EQUALS(value2, getter(thiz));
     TEST_ASSERT_NOT_EQUALS(value1, getter(thiz));
 
+#if 0
     for (int i = 0; i < 1024; ++i) {
         setter(thiz, value1);
         auto v = getter(thiz);
@@ -683,6 +691,7 @@ template<typename T> void testMethod(const char* fieldName,
         auto v2 = getter(thiz);
         TEST_ASSERT_EQUALS(value2, v2);
     }
+#endif
 }
 
 //*************************************************************************************************

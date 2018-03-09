@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.1.4"
-#define UC_JNI_VERSION_NUM 0x010104
+#define UC_JNI_VERSION "1.1.5"
+#define UC_JNI_VERSION_NUM 0x010105
 
 #include <jni.h>
 #include <memory>
@@ -367,7 +367,7 @@ template <typename T> struct type_traits<array<T>>
 {
     using jvalue_type = array<T>;
     using jarray_type = array<jvalue_type>;
-    static decltype(auto) c_cast(jvalue_type v) { return make_local(v); }
+    static decltype(auto) c_cast(jvalue_type v) noexcept { return make_local(v); }
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(type_traits<T>::signature()); }
 };
@@ -930,7 +930,7 @@ template <typename JType, typename T> static_field<JType, T> make_static_field(c
 template <typename...> struct method;
 template <typename JType, typename... Args> struct method<JType, void(Args...)> 
 {
-    template<typename JObj, typename... Ts> void operator()(const JObj& obj, const Ts&... args) const noexcept
+    template<typename JObj, typename... Ts> void operator()(const JObj& obj, const Ts&... args) const
     {
         function_traits<void>::call_method(env(), to_native_ref(obj), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -940,7 +940,7 @@ template <typename JType, typename... Args> struct method<JType, void(Args...)>
 };
 template <typename JType, typename R, typename... Args> struct method<JType, R(Args...)> 
 {
-    template<typename JObj, typename... Ts> decltype(auto) operator()(const JObj& obj, const Ts&... args) const noexcept
+    template<typename JObj, typename... Ts> decltype(auto) operator()(const JObj& obj, const Ts&... args) const
     {
         auto result = function_traits<typename type_traits<R>::jvalue_type>::call_method(env(), to_native_ref(obj), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -958,7 +958,7 @@ template <typename JType, typename Fun> method<JType, Fun> make_method(const cha
 template <typename...> struct non_virtual_method;
 template <typename JType, typename... Args> struct non_virtual_method<JType, void(Args...)> 
 {
-    template<typename JObj, typename... Ts> void operator()(const JObj& obj, const Ts&... args) const noexcept
+    template<typename JObj, typename... Ts> void operator()(const JObj& obj, const Ts&... args) const
     {
         function_traits<void>::call_non_virtual_method(env(), to_native_ref(obj), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -968,7 +968,7 @@ template <typename JType, typename... Args> struct non_virtual_method<JType, voi
 };
 template <typename JType, typename R, typename... Args> struct non_virtual_method<JType, R(Args...)> 
 {
-    template<typename JObj, typename... Ts> decltype(auto) operator()(const JObj& obj, const Ts&... args) const noexcept
+    template<typename JObj, typename... Ts> decltype(auto) operator()(const JObj& obj, const Ts&... args) const
     {
         auto result = function_traits<typename type_traits<R>::jvalue_type>::call_non_virtual_method(env(), to_native_ref(obj), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -989,7 +989,7 @@ template <typename JType, typename Fun> non_virtual_method<JType, Fun> make_non_
 template <typename...> struct static_method;
 template <typename JType, typename... Args> struct static_method<JType, void(Args...)> 
 {
-    template<typename... Ts> void operator()(const Ts&... args) const noexcept
+    template<typename... Ts> void operator()(const Ts&... args) const
     {
         function_traits<void>::call_static_method(env(), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -999,7 +999,7 @@ template <typename JType, typename... Args> struct static_method<JType, void(Arg
 };
 template <typename JType, typename R, typename... Args> struct static_method<JType, R(Args...)>
 {
-    template<typename... Ts> decltype(auto) operator()(const Ts&... args) const noexcept
+    template<typename... Ts> decltype(auto) operator()(const Ts&... args) const
     {
         auto result = function_traits<typename type_traits<R>::jvalue_type>::call_static_method(env(), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -1025,7 +1025,7 @@ template <typename JType, typename... Args> struct constructor<JType(Args...)>
     {
         return get_method_id<JType, void(Args...)>("<init>");
     }
-    template<typename... Ts> local_ref<JType> operator()(const Ts&... args) const noexcept
+    template<typename... Ts> local_ref<JType> operator()(const Ts&... args) const
     {
         auto result = env()->NewObject(get_class<JType>(), id, to_native_ref(type_traits<Args>::j_cast(args))...);
         exception_check();
@@ -1098,7 +1098,7 @@ template<typename T> struct direct_buffer_deleter
 };
 template <typename T> using direct_buffer = std::unique_ptr<std::remove_pointer_t<jobject>, direct_buffer_deleter<T>>;
 
-template <typename T> direct_buffer<T> new_direct_buffer(size_t size) noexcept
+template <typename T> direct_buffer<T> new_direct_buffer(size_t size)
 {
     std::unique_ptr<T[]> address(new T[size]);
     auto buf = new_direct_byte_buffer(address.get(), size * sizeof(T));
