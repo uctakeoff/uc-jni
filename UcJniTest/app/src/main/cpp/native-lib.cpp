@@ -314,6 +314,11 @@ JNI(void, testIsInstanceOf)(JNIEnv *env, jobject thiz)
         TEST_ASSERT(uc::jni::is_instance_of<jobject>(str));
         TEST_ASSERT(!uc::jni::is_instance_of<UcJniTest>(str));
         TEST_ASSERT(uc::jni::is_instance_of<jstring>(str));
+
+        jobject j{};
+        TEST_ASSERT(uc::jni::is_instance_of<jobject>(j));
+        TEST_ASSERT(uc::jni::is_instance_of<UcJniTest>(j));
+        TEST_ASSERT(uc::jni::is_instance_of<jstring>(j));
     });
 }
 
@@ -345,7 +350,11 @@ JNI(void, testToString)(JNIEnv *env, jobject thiz)
     uc::jni::exception_guard([&] {
         const std::string value = "Hello World!";
         const std::u16string valueJp = u"こんにちは、世界！";
-
+        {
+            jstring jstr{};
+            auto str = uc::jni::to_string(jstr);
+            TEST_ASSERT_EQUALS(std::string(), str);
+        }
         {
             auto field = uc::jni::make_static_field<UcJniTest, jstring>("staticFieldString");
             auto str = uc::jni::to_string(field.get());
@@ -625,9 +634,9 @@ template<typename T> void testField(const char* fieldName, jobject thiz, const T
 template<typename T> void testStaticMethod(const char* fieldName, 
     const char* setMethodName, const char* getMethodName, const T& value1, const T& value2)
 {
-    auto field = uc::jni::make_static_field<UcJniTest, T>(fieldName);
-    auto setter = uc::jni::make_static_method<UcJniTest, void(T)>(setMethodName);
-    auto getter = uc::jni::make_static_method<UcJniTest, T()>(getMethodName);
+    const auto field = uc::jni::make_static_field<UcJniTest, T>(fieldName);
+    const auto setter = uc::jni::make_static_method<UcJniTest, void(T)>(setMethodName);
+    const auto getter = uc::jni::make_static_method<UcJniTest, T()>(getMethodName);
 
     setter(value1);
     TEST_ASSERT_EQUALS(value1, field.get());
@@ -663,9 +672,9 @@ template<typename T> void testMethod(const char* fieldName,
     const char* setMethodName, const char* getMethodName, 
     jobject thiz, const T& value1, const T& value2)
 {
-    auto field = uc::jni::make_field<UcJniTest, T>(fieldName);
-    auto setter = uc::jni::make_method<UcJniTest, void(T)>(setMethodName);
-    auto getter = uc::jni::make_method<UcJniTest, T()>(getMethodName);
+    const auto field = uc::jni::make_field<UcJniTest, T>(fieldName);
+    const auto setter = uc::jni::make_method<UcJniTest, void(T)>(setMethodName);
+    const auto getter = uc::jni::make_method<UcJniTest, T()>(getMethodName);
 
     setter(thiz, value1);
     TEST_ASSERT_EQUALS(value1, field.get(thiz));
@@ -913,7 +922,22 @@ JNI(void, testStringBuffer)(JNIEnv *env, jobject thiz)
             TEST_ASSERT_EQUALS(3, uc::jni::string_traits<char>::length(env, j.get()));
             TEST_ASSERT_EQUALS(std::string("123"), uc::jni::to_string(j));
         }
-
+        {
+            jstring jstr{};
+            auto j = uc::jni::join(jstr);
+            TEST_ASSERT_EQUALS(0, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string(), uc::jni::to_string(j));
+        }
+        {
+            auto j = uc::jni::join(uc::jni::to_jstring("xyz"));
+            TEST_ASSERT_EQUALS(3, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string("xyz"), uc::jni::to_string(j));
+        }
+        {
+            auto j = uc::jni::join(uc::jni::make_global(uc::jni::to_jstring("xyz")));
+            TEST_ASSERT_EQUALS(3, uc::jni::string_traits<char>::length(env, j.get()));
+            TEST_ASSERT_EQUALS(std::string("xyz"), uc::jni::to_string(j));
+        }
         auto j0 = uc::jni::join("abc", "def", "ghi");
         TEST_ASSERT_EQUALS(9, uc::jni::string_traits<char>::length(env, j0.get()));
         TEST_ASSERT_EQUALS(std::string("abcdefghi"), uc::jni::to_string(j0));
@@ -1080,8 +1104,7 @@ template <> struct type_traits<std::map<std::string, int>>
 
 
         std::map<std::string, int> ret;
-        auto map = uc::jni::make_local(value);
-        auto set = entrySet(map);
+        auto set = entrySet(value);
         auto itr = iterator(set);
         while (hasNext(itr)) {
             auto e = next(itr);

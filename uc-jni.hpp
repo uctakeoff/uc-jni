@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.1.5"
-#define UC_JNI_VERSION_NUM 0x010105
+#define UC_JNI_VERSION "1.1.6"
+#define UC_JNI_VERSION_NUM 0x010106
 
 #include <jni.h>
 #include <memory>
@@ -493,10 +493,13 @@ template <typename T, size_t N, typename Traits = string_traits<T>> local_ref<js
 
 template <typename T, typename JStr, typename Traits = string_traits<T>> std::basic_string<T> to_basic_string(const JStr& str)
 {
-    auto e = env();
+    std::basic_string<T> ret;
     auto jstr = to_native_ref(str);
-    std::basic_string<T> ret(Traits::length(e, jstr), 0);
-    Traits::get_region(e, jstr, 0, e->GetStringLength(jstr), &ret[0]);
+    if (jstr) {
+        auto e = env();
+        ret.resize(Traits::length(e, jstr), 0);
+        Traits::get_region(e, jstr, 0, e->GetStringLength(jstr), &ret[0]);
+    }
     return  ret;
 }
 template <typename JStr> std::string to_string(const JStr& str)
@@ -511,20 +514,15 @@ template <typename JStr> std::u16string to_u16string(const JStr& str)
 
 using string_buffer = std::basic_string<jchar>;
 
-inline void append(string_buffer& buf, jstring str)
+template<typename JStr, native_ref<JStr> = nullptr> void append(string_buffer& buf, const JStr& str)
 {
-    const auto len = string_traits<jchar>::length(env(), str);
-    const auto prevlen = buf.size();
-    buf.resize(prevlen + len);
-    string_traits<jchar>::get_region(env(), str, 0, len, &buf[prevlen]);
-}
-inline void append(string_buffer& buf, const local_ref<jstring>& str)
-{
-    append(buf, str.get());
-}
-inline void append(string_buffer& buf, const global_ref<jstring>& str)
-{
-    append(buf, str.get());
+    auto jstr = to_native_ref(str);
+    if (jstr) {
+        const auto len = string_traits<jchar>::length(env(), jstr);
+        const auto prevlen = buf.size();
+        buf.resize(prevlen + len);
+        string_traits<jchar>::get_region(env(), jstr, 0, len, &buf[prevlen]);
+    }
 }
 inline void append(string_buffer& buf, const jchar* str, size_t len)
 {
@@ -740,22 +738,22 @@ template <typename Traits> typename const_array_elements<Traits>::pointer end(co
 template<typename T> using object_array_value_type = typename std::remove_pointer_t<native_ref<T>>::value_type;
 
 template <typename T, std::enable_if_t<is_derived_from_jobject<T>::value, std::nullptr_t> = nullptr>
-local_ref<array<T>> new_array(jsize length)
+local_ref<array<T>> new_array(jsize length) noexcept
 {
     return make_local(static_cast<array<T>>(env()->NewObjectArray(length, get_class<T>(), nullptr)));
 }
 template <typename JObjArray, std::enable_if_t<is_derived_from_jobject<object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
-decltype(auto) get(const JObjArray& array, jsize index)
+decltype(auto) get(const JObjArray& array, jsize index) noexcept
 {
     return make_local(static_cast<object_array_value_type<JObjArray>>(env()->GetObjectArrayElement(to_native_ref(array), index)));
 }
 template <typename JObjArray, typename JType, std::enable_if_t<is_derived_from_jobject<object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
-void set(JObjArray& array, jsize index, const JType& value)
+void set(JObjArray& array, jsize index, const JType& value) noexcept
 {
     env()->SetObjectArrayElement(to_native_ref(array), index, to_native_ref(value));
 }
 template <typename JObjArray, typename OutItr, typename F, std::enable_if_t<is_derived_from_jobject<object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
-void get_region(const JObjArray& array, jsize start, jsize len, OutItr itr, F transform)
+OutItr get_region(const JObjArray& array, jsize start, jsize len, OutItr itr, F transform)
 {
     const auto e = env();
     auto arr = to_native_ref(array);
@@ -763,9 +761,10 @@ void get_region(const JObjArray& array, jsize start, jsize len, OutItr itr, F tr
         *itr = transform(make_local(static_cast<object_array_value_type<JObjArray>>(e->GetObjectArrayElement(arr, i))));
         ++itr;
     }
+    return itr;
 }
 template <typename JObjArray, typename InItr, typename F, std::enable_if_t<is_derived_from_jobject<object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
-void set_region(JObjArray& array, jsize start, jsize len, InItr itr, F transform)
+InItr set_region(JObjArray& array, jsize start, jsize len, InItr itr, F transform)
 {
     const auto e = env();
     auto arr = to_native_ref(array);
@@ -774,6 +773,7 @@ void set_region(JObjArray& array, jsize start, jsize len, InItr itr, F transform
         e->SetObjectArrayElement(arr, i, lref.get());
         ++itr;
     }
+    return itr;
 }
 
 
@@ -801,14 +801,16 @@ decltype(auto) to_vector(const JArray& array)
 template <typename T, typename JArray, std::enable_if_t<is_derived_from_jobject<typename type_traits<T>::jvalue_type>::value && is_derived_from_jobjectArray<native_ref<JArray>>::value, std::nullptr_t> = nullptr>
 std::vector<T> to_vector(const JArray& array)
 {
-    const auto e = env();
+    std::vector<T> ret;
     auto arr = to_native_ref(array);
-    const auto len = length(array);
-    std::vector<T> ret(len);
-    // get_region(array, 0, len, ret.begin());
-    for (jsize i = 0; i < len; ++i) {
-        auto lref = make_local(static_cast<typename type_traits<T>::jvalue_type>(e->GetObjectArrayElement(arr, i)));
-        ret[i] = std::move(type_traits<T>::c_cast(lref.get()));
+    if (arr) {
+        const auto e = env();
+        const auto len = length(array);
+        ret.reserve(len);
+        for (jsize i = 0; i < len; ++i) {
+            auto lref = make_local(static_cast<typename type_traits<T>::jvalue_type>(e->GetObjectArrayElement(arr, i)));
+            ret.emplace_back(type_traits<T>::c_cast(lref.get()));
+        }
     }
     return ret;
 }
@@ -839,7 +841,6 @@ local_ref<typename type_traits<T>::jarray_type> to_jarray(const std::vector<T>& 
     for (jsize i = 0; i < len; ++i) {
         e->SetObjectArrayElement(ret.get(), i, to_native_ref(type_traits<T>::j_cast(vec[i])));
     }
-    // set_region(ret, 0, len, vec.begin());
     return ret;
 }
 
