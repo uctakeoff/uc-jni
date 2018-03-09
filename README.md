@@ -81,7 +81,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
         TEST_ASSERT_EQUALS(y.get(p0), 234);
 
         LOGD << toString(p0) << ", " << toString(p1) << ", " << toString(p2);
-    }
+    });
 }
 ```
 
