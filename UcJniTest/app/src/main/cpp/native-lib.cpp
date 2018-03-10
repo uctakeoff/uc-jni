@@ -1108,7 +1108,8 @@ template <> struct type_traits<std::map<std::string, int>>
         auto itr = iterator(set);
         while (hasNext(itr)) {
             auto e = next(itr);
-            ret.emplace(to_string(static_cast<jstring>(getKey(e).get())), intValue(getValue(e)));
+            // ret.emplace(to_string(static_cast<jstring>(getKey(e).get())), intValue(getValue(e)));
+            ret.emplace(to_string(getKey(e)), intValue(getValue(e)));
         }
         return ret;
     }

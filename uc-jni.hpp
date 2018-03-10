@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.1.6"
-#define UC_JNI_VERSION_NUM 0x010106
+#define UC_JNI_VERSION "1.1.7"
+#define UC_JNI_VERSION_NUM 0x010107
 
 #include <jni.h>
 #include <memory>
@@ -491,7 +491,8 @@ template <typename T, size_t N, typename Traits = string_traits<T>> local_ref<js
     return to_jstring<T,Traits>(str, N-1);
 }
 
-template <typename T, typename JStr, typename Traits = string_traits<T>> std::basic_string<T> to_basic_string(const JStr& str)
+template <typename T, typename JStr, typename Traits = string_traits<T>, std::enable_if_t<std::is_same<native_ref<JStr>, jstring>::value, std::nullptr_t> = nullptr>
+std::basic_string<T> to_basic_string(const JStr& str)
 {
     std::basic_string<T> ret;
     auto jstr = to_native_ref(str);
@@ -501,6 +502,11 @@ template <typename T, typename JStr, typename Traits = string_traits<T>> std::ba
         Traits::get_region(e, jstr, 0, e->GetStringLength(jstr), &ret[0]);
     }
     return  ret;
+}
+template <typename T, typename JObj, std::enable_if_t<!std::is_same<native_ref<JObj>, jstring>::value, std::nullptr_t> = nullptr>
+std::basic_string<T> to_basic_string(const JObj& obj)
+{
+    return to_basic_string<T>(is_instance_of<jstring>(obj) ? static_cast<jstring>(obj.get()) : jstring{});
 }
 template <typename JStr> std::string to_string(const JStr& str)
 {
