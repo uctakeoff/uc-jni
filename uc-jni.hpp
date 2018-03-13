@@ -381,7 +381,7 @@ template <typename JClass> local_ref<jclass> get_super_class(const JClass& clazz
 {
     return make_local(env()->GetSuperclass(to_native_ref(clazz)));
 }
-template <typename JType> local_ref<jclass> get_super_class() noexcept
+template <typename JType> local_ref<jclass> get_super_class()
 {
     return get_super_class(get_class<JType>());
 }
@@ -389,7 +389,7 @@ template <typename JClass1, typename JClass2> bool is_assignable_from(const JCla
 {
     return env()->IsAssignableFrom(to_native_ref(clazz1), to_native_ref(clazz2)) == JNI_TRUE;
 }
-template <typename JType1, typename JType2> bool is_assignable_from() noexcept
+template <typename JType1, typename JType2> bool is_assignable_from()
 {
     return is_assignable_from(get_class<JType1>(), get_class<JType2>());
 }
@@ -401,7 +401,7 @@ template <typename JType, typename JClass> bool is_instance_of(const JType& obj,
 {
     return env()->IsInstanceOf(to_native_ref(obj), to_native_ref(clazz)) == JNI_TRUE;
 }
-template <typename JType, typename T> bool is_instance_of(const T& obj) noexcept
+template <typename JType, typename T> bool is_instance_of(const T& obj)
 {
     return is_instance_of(obj, get_class<JType>());
 }
@@ -418,24 +418,31 @@ inline void exception_check()
 {
     if (env()->ExceptionCheck()) throw vm_exception();
 }
-template <typename JThrowable> void throw_new(const char* what) noexcept
+template <typename JThrowable> void throw_new(const char* what)
 {
     env()->ThrowNew(get_class<JThrowable>(), what);
 }
 
 template <class F, class... Args> decltype(auto) exception_guard(F&& func, Args&&... args) noexcept
 {
+    DEFINE_JCLASS_ALIAS(Error, java/lang/Error);
     DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
+    DEFINE_JCLASS_ALIAS(OutOfMemoryError, java/lang/OutOfMemoryError);
     try {
         return func(std::forward<Args>(args)...);
     } catch (vm_exception&) {
-        // do nothing
-    } catch (std::exception& e) {
+        // java exception has already thrown
+    } catch (std::runtime_error& e) {
         throw_new<RuntimeException>(e.what());
+    } catch (std::bad_alloc& e) {
+        throw_new<OutOfMemoryError>(e.what());
+    } catch (std::exception& e) {
+        throw_new<Error>(e.what());
     } catch (...) {
-        throw_new<RuntimeException>("Un unidentified C++ exception was thrown");
+        throw_new<Error>("Un unidentified C++ exception was thrown");
     }
-    return decltype(func(std::forward<Args>(args)...))();
+    env()->ExceptionDescribe();
+    return decltype(func(std::forward<Args>(args)...)){};
 }
 
 
@@ -491,6 +498,7 @@ template <typename T, size_t N, typename Traits = string_traits<T>> local_ref<js
     return to_jstring<T,Traits>(str, N-1);
 }
 
+//! Convert to std::basic_string from jstring. If it is null it returns an empty string.
 template <typename T, typename JStr, typename Traits = string_traits<T>, std::enable_if_t<std::is_same<native_ref<JStr>, jstring>::value, std::nullptr_t> = nullptr>
 std::basic_string<T> to_basic_string(const JStr& str)
 {
@@ -503,6 +511,7 @@ std::basic_string<T> to_basic_string(const JStr& str)
     }
     return  ret;
 }
+//! Convert if it is an instance of String. Otherwise it returns an empty string.
 template <typename T, typename JObj, std::enable_if_t<!std::is_same<native_ref<JObj>, jstring>::value, std::nullptr_t> = nullptr>
 std::basic_string<T> to_basic_string(const JObj& obj)
 {
@@ -744,7 +753,7 @@ template <typename Traits> typename const_array_elements<Traits>::pointer end(co
 template<typename T> using object_array_value_type = typename std::remove_pointer_t<native_ref<T>>::value_type;
 
 template <typename T, std::enable_if_t<is_derived_from_jobject<T>::value, std::nullptr_t> = nullptr>
-local_ref<array<T>> new_array(jsize length) noexcept
+local_ref<array<T>> new_array(jsize length)
 {
     return make_local(static_cast<array<T>>(env()->NewObjectArray(length, get_class<T>(), nullptr)));
 }
@@ -870,19 +879,19 @@ template<typename T> const char* get_signature() noexcept
     static auto instance = type_traits<T>::signature();
     return instance.c_str();
 }
-template<typename JType, typename T> jfieldID get_field_id(const char* name) noexcept
+template<typename JType, typename T> jfieldID get_field_id(const char* name)
 {
     return env()->GetFieldID(get_class<JType>(), name, get_signature<T>());
 }
-template<typename JType, typename T> jfieldID get_static_field_id(const char* name) noexcept
+template<typename JType, typename T> jfieldID get_static_field_id(const char* name)
 {
     return env()->GetStaticFieldID(get_class<JType>(), name, get_signature<T>());
 }
-template<typename JType, typename T> jmethodID get_method_id(const char* name) noexcept
+template<typename JType, typename T> jmethodID get_method_id(const char* name)
 {
     return env()->GetMethodID(get_class<JType>(), name, get_signature<T>());
 }
-template<typename JType, typename T> jmethodID get_static_method_id(const char* name) noexcept
+template<typename JType, typename T> jmethodID get_static_method_id(const char* name)
 {
     return env()->GetStaticMethodID(get_class<JType>(), name, get_signature<T>());
 }
@@ -904,7 +913,7 @@ template<typename JType, typename T> struct field
     }
     jfieldID id{};
 };
-template <typename JType, typename T> field<JType, T> make_field(const char* name) noexcept
+template <typename JType, typename T> field<JType, T> make_field(const char* name)
 {
     return field<JType, T>{ get_field_id<JType, T>(name) };
 }
@@ -925,7 +934,7 @@ template<typename JType, typename T> struct static_field
     }
     jfieldID id{};
 };
-template <typename JType, typename T> static_field<JType, T> make_static_field(const char* name) noexcept
+template <typename JType, typename T> static_field<JType, T> make_static_field(const char* name) nocept
 {
     return static_field<JType, T>{ get_static_field_id<JType, T>(name) };
 }
@@ -956,7 +965,7 @@ template <typename JType, typename R, typename... Args> struct method<JType, R(A
 
     jmethodID id{};
 };
-template <typename JType, typename Fun> method<JType, Fun> make_method(const char* name) noexcept
+template <typename JType, typename Fun> method<JType, Fun> make_method(const char* name)
 {
     return method<JType, Fun>{ get_method_id<JType, Fun>(name) };
 }
@@ -984,7 +993,7 @@ template <typename JType, typename R, typename... Args> struct non_virtual_metho
 
     jmethodID id{};
 };
-template <typename JType, typename Fun> non_virtual_method<JType, Fun> make_non_virtual_method(const char* name) noexcept
+template <typename JType, typename Fun> non_virtual_method<JType, Fun> make_non_virtual_method(const char* name)
 {
     return non_virtual_method<JType, Fun>{ get_method_id<JType, Fun>(name) };
 }
@@ -1015,7 +1024,7 @@ template <typename JType, typename R, typename... Args> struct static_method<JTy
 
     jmethodID id{};
 };
-template <typename JType, typename Fun> static_method<JType, Fun> make_static_method(const char* name) noexcept
+template <typename JType, typename Fun> static_method<JType, Fun> make_static_method(const char* name)
 {
     return static_method<JType, Fun>{ get_static_method_id<JType, Fun>(name) };
 }
@@ -1028,7 +1037,7 @@ template <typename JType, typename Fun> static_method<JType, Fun> make_static_me
 template <typename...> struct constructor;
 template <typename JType, typename... Args> struct constructor<JType(Args...)> 
 {
-    static jmethodID get_id() noexcept
+    static jmethodID get_id()
     {
         return get_method_id<JType, void(Args...)>("<init>");
     }
@@ -1041,7 +1050,7 @@ template <typename JType, typename... Args> struct constructor<JType(Args...)>
 
     jmethodID id{};
 };
-template <typename Fun> constructor<Fun> make_constructor() noexcept
+template <typename Fun> constructor<Fun> make_constructor()
 {
     return constructor<Fun>{ constructor<Fun>::get_id() };
 }
@@ -1074,11 +1083,11 @@ template<typename R, typename... Args> JNINativeMethod make_native_method(const 
     return JNINativeMethod { name, get_signature<R(Args...)>(), (void*)fnPtr };
 }
 
-template <typename JType> bool register_natives(const JNINativeMethod* methods, jint nMethods) noexcept
+template <typename JType> bool register_natives(const JNINativeMethod* methods, jint nMethods)
 {
     return env()->RegisterNatives(get_class<JType>(), methods, nMethods) == 0;
 }
-template <typename JType, size_t N> bool register_natives(const JNINativeMethod (&methods)[N]) noexcept
+template <typename JType, size_t N> bool register_natives(const JNINativeMethod (&methods)[N])
 {
     return register_natives<JType>(methods, N);
 }
