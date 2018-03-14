@@ -213,19 +213,27 @@ public class UcJniTest {
     @Test public void testCppException() throws Exception
     {
         try {
-            tsetRuntimeError();
+            throwRuntimeError();
             fail();
         } catch (final RuntimeException e) {
             assertEquals("std::runtime_error", e.getMessage());
         }
         try {
-            testIntException();
+            throwBadAlloc();
             fail();
-        } catch (final RuntimeException e) {
+        } catch (final OutOfMemoryError e) {
+            Log.d("UcJniTest", e.getMessage());
+        }
+        try {
+            throwInt();
+            fail();
+        } catch (final Error e) {
+            Log.d("UcJniTest", e.getMessage());
         }
     }
-    public native void tsetRuntimeError() throws Exception;
-    public native void testIntException() throws Exception;
+    public native void throwRuntimeError() throws Exception;
+    public native void throwBadAlloc() throws Exception;
+    public native void throwInt() throws Exception;
 
     @Test public native void testResolveClass() throws Exception;
 

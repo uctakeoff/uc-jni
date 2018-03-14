@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.1.7"
-#define UC_JNI_VERSION_NUM 0x010107
+#define UC_JNI_VERSION "1.2.0"
+#define UC_JNI_VERSION_NUM 0x010200
 
 #include <jni.h>
 #include <memory>
@@ -125,11 +125,58 @@ template <typename JType> local_ref<JType> make_local(JType obj) noexcept
 {
     return local_ref<JType>{obj};
 }
-
+/*
 template <typename JType> using global_ref = std::shared_ptr<std::remove_pointer_t<JType>>;
 template <typename JType> global_ref<native_ref<JType>> make_global(const JType& obj)
 {
     return global_ref<native_ref<JType>>(static_cast<native_ref<JType>>(env()->NewGlobalRef(to_native_ref(obj))), [](native_ref<JType> p) { env()->DeleteGlobalRef(p); });
+}
+*/
+template <typename JType> class global_ref
+{
+    using impl_type = std::shared_ptr<std::remove_pointer_t<JType>>;
+public:
+    using element_type = typename impl_type::element_type;
+
+    constexpr global_ref() noexcept = default;
+    global_ref(const global_ref&) noexcept = default;
+    global_ref& operator=(const global_ref&) noexcept = default;
+    ~global_ref() = default;
+
+    template <typename T, native_ref<T> = nullptr> global_ref(const T& obj) : impl(make_impl(obj))
+    {
+    }
+    template <typename T, native_ref<T> = nullptr> global_ref& operator=(const T& obj)
+    {
+        impl = make_impl(obj);
+        return *this;
+    }
+    explicit operator bool() const noexcept
+    {
+        return static_cast<bool>(impl);
+    }
+    void reset()
+    {
+        impl.reset();
+    }
+    void swap(global_ref& x) noexcept
+    {
+        return impl.swap(x.impl);
+    }
+    element_type* get() const noexcept
+    {
+        return impl.get();
+    }
+private:
+    template <typename T, native_ref<T> = nullptr> static impl_type make_impl(const T& obj)
+    {
+        return impl_type(static_cast<JType>(env()->NewGlobalRef(to_native_ref(obj))), [](JType p) { env()->DeleteGlobalRef(p); });
+    }
+    impl_type impl;
+};
+template <typename JType> global_ref<native_ref<JType>> make_global(const JType& obj)
+{
+    return global_ref<native_ref<JType>>(obj);
 }
 
 
@@ -139,10 +186,14 @@ template <typename JType> global_ref<native_ref<JType>> make_global(const JType&
 
 template <typename JType> class weak_ref
 {
+    using impl_type = std::shared_ptr<std::remove_pointer_t<jweak>>;
 public:
+    using element_type = typename impl_type::element_type;
+
     weak_ref() = default;
     weak_ref(const weak_ref&) = default;
     weak_ref& operator=(const weak_ref&) = default;
+    ~weak_ref() = default;
 
     template <typename T, native_ref<T> = nullptr> weak_ref(const T& obj) : impl(make_weak(obj))
     {
@@ -155,6 +206,10 @@ public:
     void reset() noexcept
     {
         impl.reset();
+    }
+    void swap(weak_ref& x) noexcept
+    {
+        return impl.swap(x.impl);
     }
     local_ref<JType> lock() const
     {
@@ -170,12 +225,10 @@ public:
     }
 
 private:
-    using impl_type = std::shared_ptr<std::remove_pointer_t<jweak>>;
     template <typename T> static impl_type make_weak(const T& obj)
     {
         return impl_type(static_cast<JType>(env()->NewWeakGlobalRef(to_native_ref(obj))), [](JType p) { env()->DeleteWeakGlobalRef(p); });
     }
-
     impl_type impl;
 };
 
@@ -442,7 +495,7 @@ template <class F, class... Args> decltype(auto) exception_guard(F&& func, Args&
         throw_new<Error>("Un unidentified C++ exception was thrown");
     }
     env()->ExceptionDescribe();
-    return decltype(func(std::forward<Args>(args)...)){};
+    return decltype(func(std::forward<Args>(args)...))();
 }
 
 
@@ -934,7 +987,7 @@ template<typename JType, typename T> struct static_field
     }
     jfieldID id{};
 };
-template <typename JType, typename T> static_field<JType, T> make_static_field(const char* name) nocept
+template <typename JType, typename T> static_field<JType, T> make_static_field(const char* name)
 {
     return static_field<JType, T>{ get_static_field_id<JType, T>(name) };
 }

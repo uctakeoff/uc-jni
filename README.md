@@ -107,23 +107,51 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 
 ## References
 
+### Local References
+
 `uc::jni::local_ref<T>` is an alias for `std::unique_ptr<T,>`.
 
-`uc::jni::global_ref<T>` is an alias for `std::shared_ptr<T,>`.
-
-`uc::jni::weak_ref<T>` can be handled like `std::weak_ptr<T,>`.
+`DeleteLocalRef()` is called automatically.
 
 ```cpp
-    // DeleteLocalRef() is called automatically.
-    uc::jni::local_ref<jclass> cls = jni::make_local(env->GetObjectClass(thiz));
+    // local_ref<jclass>
+    auto clazz = jni::make_local(env->GetObjectClass(thiz));
 
-    // DeleteGlobalRef() is called automatically.
-    uc::jni::global_ref<jclass> gcls = jni::make_global(cls);
+    uc::jni::local_ref<jclass> superClazz { env->GetSuperclass(clazz.get()) };
 
-    // DeleteWeakGlobalRef() is called automatically.
-    uc::jni::weak_ref<jclass>  wcls = gcls;
+    // The following meanings are the same.
+    // auto superClazz = uc::jni::get_super_class(clazz);
+```
 
-    uc::jni::local_ref<jclass> tmp = wcls.lock();
+### Global References
+
+`global_ref<T>` is similar to `std::shared_ptr<T>`.
+
+`DeleteGlobalRef()` is called automatically.
+
+```cpp
+    // global_ref<jclass>
+    auto clazz = jni::make_global(env->GetObjectClass(thiz));
+
+    // Assignment is also safe.
+    uc::jni::global_ref<jclass> superClazz{};
+    superClazz = env->GetSuperclass(clazz.get());
+
+    // It is also possible to substitute local_ref. 
+    // Ownership does not shift and a new Global Reference can be created.
+    superClazz = uc::jni::get_super_class(clazz);
+```
+
+### Weak References
+
+`uc::jni::weak_ref<T>` can be handled like `std::weak_ptr<T>`.
+
+`DeleteWeakGlobalRef()` is called automatically.
+
+```cpp
+    uc::jni::weak_ref<jobject> wref = jobj;
+
+    uc::jni::local_ref<jobject> tmp = wref.lock();
     if (tmp) {
         :
         :
@@ -250,17 +278,17 @@ Other examples.
 `jarray` and `std::vector` can convert to each other.
 
 ```cpp
-    // jintArray to std::vector<int>.
-    auto intValues = uc::jni::to_vector<int>(iArray);
+    // jintArray to std::vector<jint>.
+    auto intValues = uc::jni::to_vector(iArray);
 
-    // std::vector<int> to jintArray.
+    // std::vector<jint> to local_ref<jintArray>.
     auto jintValues = uc::jni::to_jarray(intValues);
 
 
     // array<jstring> (inherited from jobjectArray) to std::vector<std::string>.
     auto stringValues = uc::jni::to_vector<std::string>(sArray);
 
-    // std::vector<std::string> to array<jstring> (local_ref).
+    // std::vector<std::string> to local_ref<array<jstring>>.
     auto jstringValues = uc::jni::to_jarray(stringValues);
 
 ```

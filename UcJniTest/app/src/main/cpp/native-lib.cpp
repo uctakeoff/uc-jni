@@ -133,13 +133,19 @@ JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
 //*************************************************************************************************
 // Test Exception
 //*************************************************************************************************
-JNI(void, tsetRuntimeError)(JNIEnv *env, jobject thiz)
+JNI(void, throwRuntimeError)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([] {
         throw std::runtime_error("std::runtime_error");
     });
 }
-JNI(void, testIntException)(JNIEnv *env, jobject thiz)
+JNI(void, throwBadAlloc)(JNIEnv *env, jobject thiz)
+{
+    uc::jni::exception_guard([] {
+        throw std::bad_alloc();
+    });
+}
+JNI(void, throwInt)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([] {
         throw 1;
@@ -231,15 +237,25 @@ JNI(void, testResolveClass)(JNIEnv *env, jobject thiz)
 //*************************************************************************************************
 
 uc::jni::global_ref<jstring> globalString{};
+uc::jni::global_ref<jintArray> globalIntArray{};
+uc::jni::global_ref<uc::jni::array<jstring>> globalStringArray{};
 uc::jni::weak_ref<jstring> weakString{};
 
 JNI(void, testGlobalRef)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
-//        globalString = uc::jni::to_jstring("Hello World");
-        globalString = uc::jni::make_global(uc::jni::to_jstring("Hello World"));
+        TEST_ASSERT(!globalString);
+        TEST_ASSERT(!globalIntArray);
+        TEST_ASSERT(!globalStringArray);
+
+        globalString = uc::jni::to_jstring("Hello World");
+        globalIntArray = uc::jni::to_jarray(std::vector<jint>{11, 22, 33, 44, 55});
+        globalStringArray = uc::jni::to_jarray(std::vector<std::string>{"abc", "de", "fghij", "", "A"});
+        // globalString = uc::jni::make_global(uc::jni::to_jstring("Hello World"));
 
         TEST_ASSERT(globalString);
+        TEST_ASSERT(globalIntArray);
+        TEST_ASSERT(globalStringArray);
     });
 }
 
@@ -248,11 +264,20 @@ JNI(void, testWeakRef)(JNIEnv *env, jobject thiz)
     uc::jni::exception_guard([&] {
 
         TEST_ASSERT(globalString);
-
-
+        TEST_ASSERT_EQUALS(std::string("Hello World"), uc::jni::to_string(globalString));
+        TEST_ASSERT(globalIntArray);
+        {
+            auto expected = std::vector<jint>{11, 22, 33, 44, 55};
+            TEST_ASSERT_EQUALS(expected, uc::jni::to_vector(globalIntArray));
+        }
+        TEST_ASSERT(globalStringArray);
+        {
+            auto expected = std::vector<std::string>{"abc", "de", "fghij", "", "A"};
+            TEST_ASSERT_EQUALS(expected, uc::jni::to_vector<std::string>(globalStringArray));
+        }
         auto jstr = uc::jni::to_jstring("Hello World");
 
-        weakString = uc::jni::weak_ref<jstring>(jstr);
+        weakString = jstr;//uc::jni::weak_ref<jstring>(jstr);
         TEST_ASSERT(weakString.is_same(jstr));
         TEST_ASSERT(!weakString.is_same(globalString));
         TEST_ASSERT(!weakString.expired());
