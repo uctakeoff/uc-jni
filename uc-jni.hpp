@@ -1,13 +1,13 @@
 /**
-uc::jni
+uc::jni <https://github.com/uctakeoff/uc-jni>
 Copyright (c) 2018, Kentaro Ushiyama
 This software is released under the MIT License.
 http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.2.0"
-#define UC_JNI_VERSION_NUM 0x010200
+#define UC_JNI_VERSION "1.2.1"
+#define UC_JNI_VERSION_NUM 0x010201
 
 #include <jni.h>
 #include <memory>
@@ -143,10 +143,10 @@ public:
     global_ref& operator=(const global_ref&) noexcept = default;
     ~global_ref() = default;
 
-    template <typename T, native_ref<T> = nullptr> global_ref(const T& obj) : impl(make_impl(obj))
+    template <typename T> global_ref(const T& obj) : impl(make_impl(obj))
     {
     }
-    template <typename T, native_ref<T> = nullptr> global_ref& operator=(const T& obj)
+    template <typename T> global_ref& operator=(const T& obj)
     {
         impl = make_impl(obj);
         return *this;
@@ -168,7 +168,8 @@ public:
         return impl.get();
     }
 private:
-    template <typename T, native_ref<T> = nullptr> static impl_type make_impl(const T& obj)
+    template <typename T, std::enable_if_t<std::is_same<native_ref<T>, JType>::value, std::nullptr_t> = nullptr>
+    static impl_type make_impl(const T& obj)
     {
         return impl_type(static_cast<JType>(env()->NewGlobalRef(to_native_ref(obj))), [](JType p) { env()->DeleteGlobalRef(p); });
     }
@@ -195,10 +196,10 @@ public:
     weak_ref& operator=(const weak_ref&) = default;
     ~weak_ref() = default;
 
-    template <typename T, native_ref<T> = nullptr> weak_ref(const T& obj) : impl(make_weak(obj))
+    template <typename T> weak_ref(const T& obj) : impl(make_weak(obj))
     {
     }
-    template <typename T, native_ref<T> = nullptr> weak_ref& operator=(const T& obj)
+    template <typename T> weak_ref& operator=(const T& obj)
     {
         impl = make_weak(obj);
         return *this;
@@ -225,9 +226,10 @@ public:
     }
 
 private:
-    template <typename T> static impl_type make_weak(const T& obj)
+    template <typename T, std::enable_if_t<std::is_same<native_ref<T>, JType>::value, std::nullptr_t> = nullptr>
+    static impl_type make_weak(const T& obj)
     {
-        return impl_type(static_cast<JType>(env()->NewWeakGlobalRef(to_native_ref(obj))), [](JType p) { env()->DeleteWeakGlobalRef(p); });
+        return impl_type(env()->NewWeakGlobalRef(to_native_ref(obj)), [](jweak p) { env()->DeleteWeakGlobalRef(p); });
     }
     impl_type impl;
 };
@@ -446,17 +448,17 @@ template <typename JType1, typename JType2> bool is_assignable_from()
 {
     return is_assignable_from(get_class<JType1>(), get_class<JType2>());
 }
-template <typename JType> local_ref<jclass> get_object_class(const JType& obj) noexcept
+template <typename JType> local_ref<jclass> get_object_class(const JType& jobj) noexcept
 {
-    return make_local(env()->GetObjectClass(to_native_ref(obj)));
+    return make_local(env()->GetObjectClass(to_native_ref(jobj)));
 }
-template <typename JType, typename JClass> bool is_instance_of(const JType& obj, const JClass& clazz) noexcept
+template <typename JType, typename JClass> bool is_instance_of(const JType& jobj, const JClass& clazz) noexcept
 {
-    return env()->IsInstanceOf(to_native_ref(obj), to_native_ref(clazz)) == JNI_TRUE;
+    return env()->IsInstanceOf(to_native_ref(jobj), to_native_ref(clazz)) == JNI_TRUE;
 }
-template <typename JType, typename T> bool is_instance_of(const T& obj)
+template <typename JType, typename T> bool is_instance_of(const T& jobj)
 {
-    return is_instance_of(obj, get_class<JType>());
+    return is_instance_of(jobj, get_class<JType>());
 }
 template <typename JType1, typename JType2> bool is_same_object(const JType1& ref1, const JType2& ref2) noexcept
 {
@@ -551,24 +553,31 @@ template <typename T, size_t N, typename Traits = string_traits<T>> local_ref<js
     return to_jstring<T,Traits>(str, N-1);
 }
 
+namespace internal
+{
+    template <typename JObj, std::enable_if_t<std::is_same<native_ref<JObj>, jstring>::value, std::nullptr_t> = nullptr> constexpr jstring as_jstring(const JObj& jobj) 
+    {
+        return to_native_ref(jobj);
+    }
+    //! return jstring if it is an instance of String. Otherwise it returns null.
+    template <typename JObj, std::enable_if_t<!std::is_same<native_ref<JObj>, jstring>::value, std::nullptr_t> = nullptr> jstring as_jstring(const JObj& jobj)
+    {
+        return is_instance_of<jstring>(jobj) ? static_cast<jstring>(to_native_ref(jobj)) : jstring{};
+    }
+}
+
 //! Convert to std::basic_string from jstring. If it is null it returns an empty string.
-template <typename T, typename JStr, typename Traits = string_traits<T>, std::enable_if_t<std::is_same<native_ref<JStr>, jstring>::value, std::nullptr_t> = nullptr>
+template <typename T, typename JStr, typename Traits = string_traits<T>>
 std::basic_string<T> to_basic_string(const JStr& str)
 {
     std::basic_string<T> ret;
-    auto jstr = to_native_ref(str);
+    auto jstr = internal::as_jstring(str);
     if (jstr) {
         auto e = env();
         ret.resize(Traits::length(e, jstr), 0);
         Traits::get_region(e, jstr, 0, e->GetStringLength(jstr), &ret[0]);
     }
     return  ret;
-}
-//! Convert if it is an instance of String. Otherwise it returns an empty string.
-template <typename T, typename JObj, std::enable_if_t<!std::is_same<native_ref<JObj>, jstring>::value, std::nullptr_t> = nullptr>
-std::basic_string<T> to_basic_string(const JObj& obj)
-{
-    return to_basic_string<T>(is_instance_of<jstring>(obj) ? static_cast<jstring>(obj.get()) : jstring{});
 }
 template <typename JStr> std::string to_string(const JStr& str)
 {
@@ -582,9 +591,9 @@ template <typename JStr> std::u16string to_u16string(const JStr& str)
 
 using string_buffer = std::basic_string<jchar>;
 
-template<typename JStr, native_ref<JStr> = nullptr> void append(string_buffer& buf, const JStr& str)
+template <typename JStr> void append(string_buffer& buf, const JStr& str)
 {
-    auto jstr = to_native_ref(str);
+    auto jstr = internal::as_jstring(str);
     if (jstr) {
         const auto len = string_traits<jchar>::length(env(), jstr);
         const auto prevlen = buf.size();
