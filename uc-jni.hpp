@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.2.1"
-#define UC_JNI_VERSION_NUM 0x010201
+#define UC_JNI_VERSION "1.2.2"
+#define UC_JNI_VERSION_NUM 0x010202
 
 #include <jni.h>
 #include <memory>
@@ -154,6 +154,22 @@ public:
     explicit operator bool() const noexcept
     {
         return static_cast<bool>(impl);
+    }
+	element_type* operator->() noexcept 
+    {
+        return impl.get();
+    }
+	const element_type* operator->() const noexcept 
+    {
+        return impl.get();
+    }
+	element_type& operator *() noexcept 
+    {
+        return *impl;
+    }
+	const element_type& operator *() const noexcept 
+    {
+        return *impl;
     }
     void reset()
     {
