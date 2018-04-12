@@ -22,6 +22,24 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 }
 ```
 
+**If you call `uc::jni::find_class()`/`uc::jni::get_class()` in native thread ( pthread_create(), std::thread, std::async...), also call `uc::jni::replace_with_class_loader_find_class()`**.
+
+```cpp
+DEFINE_JCLASS_ALIAS(YourOwnClass, com/example/YourOwnClass);
+
+jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
+{
+    uc::jni::java_vm(vm);
+    // call before find_class() / get_class()
+    uc::jni::replace_with_class_loader_find_class<YourOwnClass>();
+
+    return JNI_VERSION_1_6;
+}
+```
+
+see also [FindClass in native thread](#findclass-in-native-thread).
+
+
 # Example
 
 ```cpp
@@ -176,6 +194,64 @@ The following method is recommended because it provides very fast cache access.
     jclass cls = uc::jni::get_class<RuntimeException>();
 ```
 
+## FindClass in native thread
+
+ [FAQ: Why didn't FindClass find my class?](https://developer.android.com/training/articles/perf-jni.html#faq_FindClass)
+
+> You can get into trouble if you create a thread yourself (perhaps by calling pthread_create and then attaching it with AttachCurrentThread). Now there are no stack frames from your application. If you call FindClass from this thread, the JavaVM will start in the "system" class loader instead of the one associated with your application, so attempts to find app-specific classes will fail.
+
+```cpp
+    // java.lang.ClassNotFoundException was thrown.
+    std::async(std::launch::async, [] {
+        auto cls = uc::jni::find_class("com/example/YourOwnClass");
+    });
+```
+
+> There are a few ways to work around this:
+
+- Do your FindClass lookups once, in JNI_OnLoad, and cache the class references for later use. 
+    ```cpp
+    DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
+    DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
+    DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
+        :
+
+    jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
+    {
+        uc::jni::java_vm(vm);
+
+        // create class caches
+        uc::jni::get_class<YourOwnClass1>();
+        uc::jni::get_class<YourOwnClass2>();
+        uc::jni::get_class<YourOwnClass3>();
+            :
+
+        return JNI_VERSION_1_6;
+    }
+    ```
+
+    Class caches created by these calls are only valid with `uc::jni::get_class()`.
+
+- Cache a reference to the ClassLoader object somewhere handy, and issue loadClass calls directly. 
+
+    ```cpp
+    DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
+    DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
+    DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
+
+    jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
+    {
+        uc::jni::java_vm(vm);
+
+        // create ClassLoader cache
+        uc::jni::replace_with_class_loader_find_class<YourOwnClass1>();
+
+        return JNI_VERSION_1_6;
+    }
+    ```
+
+    `uc::jni::replace_with_class_loader_find_class()` replaces the implementation of `uc::jni::find_class()` API with `java.lang.ClassLoader#findClass()`.
+    This is implemented with reference to the code written [here](https://stackoverflow.com/questions/13263340/findclass-from-any-thread-in-android-jni).
 
 ## String Operations
 
