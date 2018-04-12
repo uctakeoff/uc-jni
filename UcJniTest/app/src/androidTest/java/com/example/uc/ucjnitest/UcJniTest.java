@@ -230,12 +230,16 @@ public class UcJniTest {
         } catch (final Error e) {
             Log.d("UcJniTest", e.getMessage());
         }
+//        String s = new String("aiueo");
+//        Object o = s;
+//        UcJniTest l = (UcJniTest)o;
     }
     public native void throwRuntimeError() throws Exception;
     public native void throwBadAlloc() throws Exception;
     public native void throwInt() throws Exception;
 
     @Test public native void testResolveClass() throws Exception;
+    @Test public native void testFindClassInNativeThread() throws Exception;
 
     @Test public void testRef() throws Exception
     {

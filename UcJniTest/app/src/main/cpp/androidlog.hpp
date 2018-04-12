@@ -51,5 +51,6 @@ namespace android {
 }
 
 #define LOGD uc::android::log< ANDROID_LOG_DEBUG >(__func__) << "#" << __LINE__ << " : "
+#define LOGW uc::android::log< ANDROID_LOG_WARN >(__func__) << "#" << __LINE__ << " : "
 
 #endif

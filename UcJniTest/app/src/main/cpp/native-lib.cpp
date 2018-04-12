@@ -63,6 +63,7 @@ uc::jni::method<jclass, std::string()> getClassName{};
 jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 {
     uc::jni::java_vm(vm);
+    uc::jni::replace_with_class_loader_find_class<UcJniTest>();
 
     gc = uc::jni::make_static_method<System, void()>("gc");
     logd = uc::jni::make_static_method<Log, int(std::string, jstring)>("d");
@@ -231,6 +232,37 @@ JNI(void, testResolveClass)(JNIEnv *env, jobject thiz)
     });
 }
 
+inline void test_findClass(const char* fqcn)
+{
+    static auto toString = uc::jni::make_method<jobject, std::string()>("toString");
+
+    // If you call "uc::jni::replace_with_class_loader_find_class<UcJniTest>()" in JNI_OnLoad(), the following function is safe.
+    auto obj0 = uc::jni::find_class(fqcn);
+    LOGD << toString(obj0);
+
+    // JNIEnv::findClass() didn't find your class in native thread.
+    try {
+        auto obj1 = uc::jni::find_class_native(fqcn);
+        LOGD << toString(obj1);
+    } catch (std::exception& ex) {
+        LOGW << __func__ << "() : find_class_native(" << fqcn << ") failed. " << ex.what();
+        uc::jni::env()->ExceptionDescribe();
+        uc::jni::env()->ExceptionClear();
+    }
+}
+JNI(void, testFindClassInNativeThread)(JNIEnv *env, jobject thiz)
+{
+    std::async(std::launch::async, [&] {
+        test_findClass("java/lang/Object");
+
+        test_findClass("android/graphics/Point");
+
+        test_findClass("com/example/uc/ucjnitest/MainActivity");
+
+        test_findClass("com/example/uc/ucjnitest/UcJniTest");
+    });
+}
+
 
 //*************************************************************************************************
 // Test global_ref, weak_lef
@@ -344,6 +376,12 @@ JNI(void, testIsInstanceOf)(JNIEnv *env, jobject thiz)
         TEST_ASSERT(uc::jni::is_instance_of<jobject>(j));
         TEST_ASSERT(uc::jni::is_instance_of<UcJniTest>(j));
         TEST_ASSERT(uc::jni::is_instance_of<jstring>(j));
+
+//        auto ucjnitest = uc::jni::as<UcJniTest>(thiz);
+//        LOGD << "ucjnitest@" << ucjnitest;
+//        auto ucjnitest2 = uc::jni::as<jstring>(thiz);
+//        LOGD << "ucjnitest2 @" << ucjnitest2;
+        
     });
 }
 

@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.2.2"
-#define UC_JNI_VERSION_NUM 0x010202
+#define UC_JNI_VERSION "1.3.0"
+#define UC_JNI_VERSION_NUM 0x010300
 
 #include <jni.h>
 #include <memory>
@@ -15,6 +15,7 @@ http://opensource.org/licenses/mit-license.php
 #include <stdexcept>
 #include <type_traits>
 #include <vector>
+#include <algorithm>
 
 namespace uc {
 namespace jni {
@@ -266,11 +267,51 @@ DEFINE_FQCN(jclass,     java/lang/Class)
 DEFINE_FQCN(jthrowable, java/lang/Throwable)
 #undef DEFINE_FQCN
 
-inline local_ref<jclass> find_class(const char* fqcn)
+inline local_ref<jclass> find_class_native(const char* fqcn)
 {
     auto o = env()->FindClass(fqcn);
     if (env()->ExceptionCheck()) throw vm_exception();
     return make_local(o);
+}
+
+/*
+FAQ: Why didn't FindClass find my class? <https://developer.android.com/training/articles/perf-jni.html#faq_FindClass>
+> Cache a reference to the ClassLoader object somewhere handy, and issue loadClass calls directly. This requires some effort.
+
+References: FindClass from any thread in Android JNI <https://stackoverflow.com/questions/13263340/findclass-from-any-thread-in-android-jni>
+*/
+namespace internal {
+    inline std::function<local_ref<jclass>(const char*)> get_class_loader_find_class_method(const local_ref<jclass>& cls)
+    {
+        auto e = env();
+        auto getClassLoader = e->GetMethodID(make_local(e->GetObjectClass(cls.get())).get(), "getClassLoader", "()Ljava/lang/ClassLoader;");
+        auto classLoader = make_global(e->CallObjectMethod(cls.get(), getClassLoader));
+        auto findClass = e->GetMethodID(find_class_native("java/lang/ClassLoader").get(), "findClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+        return [classLoader = std::move(classLoader), findClass](const char* fqcn) {
+            auto o = static_cast<jclass>(env()->CallObjectMethod(classLoader.get(), findClass, env()->NewStringUTF(fqcn)));
+            if (env()->ExceptionCheck()) {
+                env()->ExceptionClear();
+                return find_class_native(fqcn);
+            }
+            return make_local(o);
+        };
+    }
+    inline std::function<local_ref<jclass>(const char*)>& class_loader_find_class_cache(std::function<local_ref<jclass>(const char*)>&& cache = {})
+    {
+        static auto instance(std::move(cache));
+        return instance;
+    }
+}
+
+template<typename JType> void replace_with_class_loader_find_class()
+{
+    internal::class_loader_find_class_cache(internal::get_class_loader_find_class_method(find_class_native(fqcn<JType>())));
+}
+
+inline local_ref<jclass> find_class(const char* fqcn)
+{
+    const auto& find_class_fun = internal::class_loader_find_class_cache(find_class_native);
+    return find_class_fun(fqcn);
 }
 template<typename JType> jclass get_class()
 {
