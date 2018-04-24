@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.3.0"
-#define UC_JNI_VERSION_NUM 0x010300
+#define UC_JNI_VERSION "1.3.1"
+#define UC_JNI_VERSION_NUM 0x010301
 
 #include <jni.h>
 #include <memory>
@@ -144,7 +144,7 @@ public:
     global_ref& operator=(const global_ref&) noexcept = default;
     ~global_ref() = default;
 
-    template <typename T> global_ref(const T& obj) : impl(make_impl(obj))
+    template <typename T> explicit global_ref(const T& obj) : impl(make_impl(obj))
     {
     }
     template <typename T> global_ref& operator=(const T& obj)
@@ -156,19 +156,11 @@ public:
     {
         return static_cast<bool>(impl);
     }
-	element_type* operator->() noexcept 
+	element_type* operator->() const noexcept 
     {
         return impl.get();
     }
-	const element_type* operator->() const noexcept 
-    {
-        return impl.get();
-    }
-	element_type& operator *() noexcept 
-    {
-        return *impl;
-    }
-	const element_type& operator *() const noexcept 
+	element_type& operator *() const noexcept 
     {
         return *impl;
     }
@@ -213,7 +205,7 @@ public:
     weak_ref& operator=(const weak_ref&) = default;
     ~weak_ref() = default;
 
-    template <typename T> weak_ref(const T& obj) : impl(make_weak(obj))
+    template <typename T> explicit weak_ref(const T& obj) : impl(make_weak(obj))
     {
     }
     template <typename T> weak_ref& operator=(const T& obj)
@@ -334,25 +326,21 @@ using className = className##_impl*
 
 namespace internal
 {
-    template <std::size_t... i> struct indices {};
-    template <std::size_t M, std::size_t... i> struct make_indices : public make_indices<M - 1, i..., sizeof...(i)> {};
-    template <std::size_t... i> struct make_indices<0, i...> { using type = indices<i...>; };
-
     // constexpr string
     template <std::size_t N> struct cexprstr
     {
-        template <std::size_t... i> constexpr cexprstr(const char (&v)[N], indices<i...>) noexcept : value{v[i]...}
+        template <std::size_t... i> constexpr explicit cexprstr(const char (&v)[N], std::index_sequence<i...>) noexcept : value{v[i]...}
         {
         }
         template <std::size_t M, std::size_t... i1, std::size_t... i2>
-        constexpr cexprstr(const char (&v1)[M], indices<i1...>, const char (&v2)[N-M+1], indices<i2...>) noexcept : value{v1[i1]..., v2[i2]...}
+        constexpr cexprstr(const char (&v1)[M], std::index_sequence<i1...>, const char (&v2)[N-M+1], std::index_sequence<i2...>) noexcept : value{v1[i1]..., v2[i2]...}
         {
         }
-        constexpr cexprstr(const char (&v)[N]) noexcept : cexprstr(v, typename make_indices<N>::type{})
+        constexpr explicit cexprstr(const char (&v)[N]) noexcept : cexprstr(v, std::make_index_sequence<N>{})
         {
         }
         template <std::size_t M> constexpr cexprstr(const char (&v1)[M], const char (&v2)[N-M+1]) noexcept
-            : cexprstr(v1, typename make_indices<M-1>::type{}, v2, typename make_indices<N-M+1>::type{})
+            : cexprstr(v1, std::make_index_sequence<M-1>{}, v2, std::make_index_sequence<N-M+1>{})
         {
         }
         template<std::size_t M> constexpr cexprstr<N+M-1> append(const cexprstr<M>& obj) noexcept
@@ -1026,7 +1014,7 @@ template<typename JType, typename T> struct field
     {
         return type_traits<T>::c_cast(function_traits<typename type_traits<T>::jvalue_type>::get_field(env(), jni::to_native_ref(obj), id));
     }
-    template<typename JObj, typename U> void set(const JObj& obj, const U& value)
+    template<typename JObj, typename U> void set(const JObj& obj, const U& value) const
     {
         function_traits<typename type_traits<T>::jvalue_type>::set_field(env(), jni::to_native_ref(obj), id, type_traits<T>::j_cast(value));
     }
@@ -1047,7 +1035,7 @@ template<typename JType, typename T> struct static_field
     {
         return type_traits<T>::c_cast(function_traits<typename type_traits<T>::jvalue_type>::get_static_field(env(), get_class<JType>(), id));
     }
-    template<typename U> void set(const U& value)
+    template<typename U> void set(const U& value) const
     {
         function_traits<typename type_traits<T>::jvalue_type>::set_static_field(env(), get_class<JType>(), id, type_traits<T>::j_cast(value));
     }
@@ -1187,7 +1175,7 @@ template <typename JType> struct monitor_exit
     }
 };
 template <typename JType> using monitor = std::unique_ptr<std::remove_pointer_t<JType>, monitor_exit<JType>>;
-template <typename JType> monitor<native_ref<JType>> synchronized(const JType& obj) noexcept
+template <typename JType> monitor<native_ref<JType>> synchronized(const JType& obj)
 {
     if (env()->MonitorEnter(to_native_ref(obj)) != 0) throw std::runtime_error("uc::jni::syncronized");
     return monitor<native_ref<JType>>(to_native_ref(obj));

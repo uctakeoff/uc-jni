@@ -201,7 +201,7 @@ The following method is recommended because it provides very fast cache access.
 > You can get into trouble if you create a thread yourself (perhaps by calling pthread_create and then attaching it with AttachCurrentThread). Now there are no stack frames from your application. If you call FindClass from this thread, the JavaVM will start in the "system" class loader instead of the one associated with your application, so attempts to find app-specific classes will fail.
 
 ```cpp
-    // java.lang.ClassNotFoundException was thrown.
+    // java.lang.ClassNotFoundException is thrown.
     std::async(std::launch::async, [] {
         auto cls = uc::jni::find_class("com/example/YourOwnClass");
     });
@@ -361,10 +361,10 @@ Other examples.
     auto jintValues = uc::jni::to_jarray(intValues);
 
 
-    // array<jstring> (inherited from jobjectArray) to std::vector<std::string>.
+    // uc::jni::array<jstring> (inherited from jobjectArray) to std::vector<std::string>.
     auto stringValues = uc::jni::to_vector<std::string>(sArray);
 
-    // std::vector<std::string> to local_ref<array<jstring>>.
+    // std::vector<std::string> to local_ref<uc::jni::array<jstring>>.
     auto jstringValues = uc::jni::to_jarray(stringValues);
 
 ```
