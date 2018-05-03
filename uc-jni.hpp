@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.3.1"
-#define UC_JNI_VERSION_NUM 0x010301
+#define UC_JNI_VERSION "1.4.0"
+#define UC_JNI_VERSION_NUM 0x010400
 
 #include <jni.h>
 #include <memory>
@@ -1238,6 +1238,141 @@ template <typename T> T* address(const direct_buffer<T>& obj) noexcept
 {
     return static_cast<T*>(env()->GetDirectBufferAddress(obj.get()));
 }
+
+
+//*************************************************************************************************
+// Wrapper Class Build Macros (Beta)
+//*************************************************************************************************
+
+template<typename Derived, typename Base> struct jclass_base : public std::remove_pointer_t<Base>
+{
+    static constexpr Derived this_type() noexcept { return Derived{}; }
+    template<typename ...Ts> static decltype(auto) new_(Ts&&... args)
+    {
+        return std::remove_pointer_t<Derived>::constructor(std::make_tuple(uc::jni::to_native_ref(args)...), std::make_index_sequence<sizeof...(args)>{});
+    }
+};
+
+//! start wrapper class definition.
+#define UC_JNI_DEFINE_JCLASS(className, fullyQualifiedClassName) UC_JNI_DEFINE_JCLASS_DERIVED(className, fullyQualifiedClassName, uc::jni::object)
+
+#define UC_JNI_DEFINE_JCLASS_DERIVED(className, fullyQualifiedClassName, baseClassName) \
+    struct className ## _;\
+    using className = className ## _*;\
+    template <> constexpr decltype(auto) uc::jni::fqcn<className>() noexcept { return #fullyQualifiedClassName; }\
+    struct className ## _ : public uc::jni::jclass_base<className, baseClassName>
+
+//! define class method and non virtual method.
+#define UC_JNI_DEFINE_JCLASS_METHOD(returnType, methodName, ...) \
+    public:\
+    template<typename ...Ts> decltype(auto) methodName(Ts&&... args)\
+    {\
+        return methodName ## _(std::make_tuple(uc::jni::to_native_ref(args)...), std::make_index_sequence<sizeof...(args)>{});\
+    }\
+    template<typename ...Ts> decltype(auto) methodName ## NonVirtual(Ts&&... args)\
+    {\
+        return methodName ## NonVirtual_(std::make_tuple(uc::jni::to_native_ref(args)...), std::make_index_sequence<sizeof...(args)>{});\
+    }\
+    private:\
+    template <size_t ...I> decltype(auto) methodName ## _(const std::tuple<__VA_ARGS__>& args, std::index_sequence<I...>)\
+    {\
+        static const auto method = uc::jni::make_method<decltype(this), returnType(__VA_ARGS__)>(#methodName);\
+        return method(this, std::get<I>(args)...);\
+    }\
+    template <size_t ...I> decltype(auto) methodName ## NonVirtual_(const std::tuple<__VA_ARGS__>& args, std::index_sequence<I...>)\
+    {\
+        static const auto method = uc::jni::make_non_virtual_method<decltype(this), returnType(__VA_ARGS__)>(#methodName);\
+        return method(this, std::get<I>(args)...);\
+    }
+
+//! define overloaded method.
+#define UC_JNI_DEFINE_JCLASS_OVERLOADED_METHOD(returnType, methodName, ...) \
+    private:\
+    template <size_t ...I> decltype(auto) methodName ## _(const std::tuple<__VA_ARGS__>& args, std::index_sequence<I...>)\
+    {\
+        static const auto method = uc::jni::make_method<decltype(this), returnType(__VA_ARGS__)>(#methodName);\
+        return method(this, std::get<I>(args)...);\
+    }\
+    template <size_t ...I> decltype(auto) methodName ## NonVirtual_(const std::tuple<__VA_ARGS__>& args, std::index_sequence<I...>)\
+    {\
+        static const auto method = uc::jni::make_non_virtual_method<decltype(this), returnType(__VA_ARGS__)>(#methodName);\
+        return method(this, std::get<I>(args)...);\
+    }
+
+//! define field accessor.
+#define UC_JNI_DEFINE_JCLASS_FIELD(valueType, fieldName) \
+    private:\
+    static decltype(auto) fieldName ## _accessor()\
+    {\
+        static const auto field = uc::jni::make_field<decltype(this_type()), valueType>(#fieldName);\
+        return field;\
+    }\
+    public:\
+    valueType fieldName() { return fieldName ## _accessor().get(this); }\
+    decltype(auto) fieldName(const valueType& val) { fieldName ## _accessor().set(this, val); return *this; }
+
+
+//! define constructor method.  instead of this, call new_() function.
+#define UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(...) \
+    public:\
+    template <size_t ...I> static decltype(auto) constructor(const std::tuple<__VA_ARGS__>& args, std::index_sequence<I...>)\
+    {\
+        static const auto ctor = uc::jni::make_constructor<decltype(this_type())(__VA_ARGS__)>();\
+        return ctor(std::get<I>(args)...);\
+    }
+
+//! define static method.
+#define UC_JNI_DEFINE_JCLASS_STATIC_METHOD(returnType, methodName, ...) \
+    public:\
+    template<typename ...Ts> static decltype(auto) methodName(Ts&&... args)\
+    {\
+        return methodName ## _(std::make_tuple(uc::jni::to_native_ref(args)...), std::make_index_sequence<sizeof...(args)>{});\
+    }\
+    private:\
+    template <size_t ...I> static decltype(auto) methodName ## _(const std::tuple<__VA_ARGS__>& args, std::index_sequence<I...>)\
+    {\
+        static const auto method = uc::jni::make_static_method<decltype(this_type()), returnType(__VA_ARGS__)>(#methodName);\
+        return method(std::get<I>(args)...);\
+    }
+
+
+//! define overloaded static method.
+#define UC_JNI_DEFINE_JCLASS_OVERLOADED_STATIC_METHOD(returnType, methodName, ...) \
+    private:\
+    template <size_t ...I> static decltype(auto) methodName ## _(const std::tuple<__VA_ARGS__>& args, std::index_sequence<I...>)\
+    {\
+        static const auto method = uc::jni::make_static_method<decltype(this_type()), returnType(__VA_ARGS__)>(#methodName);\
+        return method(std::get<I>(args)...);\
+    }
+
+//! define static field accessor.
+#define UC_JNI_DEFINE_JCLASS_STATIC_FIELD(valueType, fieldName) \
+    private:\
+    static decltype(auto) fieldName ## _accessor()\
+    {\
+        static const auto field = uc::jni::make_static_field<decltype(this_type()), valueType>(#fieldName);\
+        return field;\
+    }\
+    public:\
+    static valueType fieldName() { return fieldName ## _accessor().get(); }\
+    static void fieldName(const valueType& val) { fieldName ## _accessor().set(val); }
+
+
+//! define uc::jni::object
+UC_JNI_DEFINE_JCLASS_DERIVED(object, java/lang/Object, jobject)
+{
+    UC_JNI_DEFINE_JCLASS_METHOD(jobject, clone)
+    UC_JNI_DEFINE_JCLASS_METHOD(bool, equals, jobject)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, finalize)
+    UC_JNI_DEFINE_JCLASS_METHOD(jclass, getClass)
+    UC_JNI_DEFINE_JCLASS_METHOD(jint, hashCode)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, notify)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, notifyAll)
+    UC_JNI_DEFINE_JCLASS_METHOD(std::string, toString)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, wait)
+    UC_JNI_DEFINE_JCLASS_OVERLOADED_METHOD(void, wait, jlong)
+    UC_JNI_DEFINE_JCLASS_OVERLOADED_METHOD(void, wait, jlong, jint)
+};
 
 }
 }

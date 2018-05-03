@@ -18,6 +18,22 @@ public class UcJniTest {
     static {
         System.loadLibrary("native-lib");
     }
+    class InnerA
+    {
+        public String getString()
+        {
+            return "InnerA";
+        }
+        int value;
+    }
+    class InnerB extends InnerA
+    {
+        public String getString()
+        {
+            return "InnerB";
+        }
+    }
+
 
     public static boolean staticFieldBool   = true;
     public static byte    staticFieldByte   = 10;

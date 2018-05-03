@@ -1,18 +1,19 @@
 # uc-jni
- [日本語ドキュメント(Japanese)](https://github.com/uctakeoff/uc-jni/blob/master/READMEjp.md)
+uc::jni は C++14 シングルヘッダで書かれた Java Native Interface (JNI) のラッパーライブラリである。
 
-uc::jni is a Java Native Interface (JNI) wrapper library created C++14 single-header.
+* [Qiita 記事](https://qiita.com/uctakeoff/items/3160031712dadbacfc97)
 
 
 # Install
 
-1. Copy [`uc-jni.hpp`](https://github.com/uctakeoff/uc-jni/blob/master/uc-jni.hpp) to your project.
-2. Include it in your c++ source.
+1. [`uc-jni.hpp`](https://github.com/uctakeoff/uc-jni/blob/master/uc-jni.hpp) をプロジェクトにコピーする。
+2. C++ソースにインクルードする。
 
 
 # Setup
 
-You must call `uc::jni::java_vm()` only once at the beginning.
+`uc::jni::java_vm()` を最初に1度だけ実行する必要がある。
+
 
 ```cpp
 jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
@@ -23,7 +24,7 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 }
 ```
 
-**If you call `uc::jni::find_class()`/`uc::jni::get_class()` in native thread ( pthread_create(), std::thread, std::async...), also call `uc::jni::replace_with_class_loader_find_class()`**.
+**もし、ネイティブスレッド ( pthread_create, std::thread, std::async...)上で `uc::jni::find_class()`/`uc::jni::get_class()` を呼び出す場合は `uc::jni::replace_with_class_loader_find_class()` も1度だけ呼び出しておく。**
 
 ```cpp
 DEFINE_JCLASS_ALIAS(YourOwnClass, com/example/YourOwnClass);
@@ -31,14 +32,15 @@ DEFINE_JCLASS_ALIAS(YourOwnClass, com/example/YourOwnClass);
 jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 {
     uc::jni::java_vm(vm);
-    // call before find_class() / get_class()
+
+    // uc::jni::java_vm() の次に1度だけ呼び出す。
     uc::jni::replace_with_class_loader_find_class<YourOwnClass>();
 
     return JNI_VERSION_1_6;
 }
 ```
 
-see also [FindClass in native thread](#findclass-in-native-thread).
+詳細は [FindClass in native thread](#findclass-in-native-thread) を参照.
 
 
 # Example
@@ -48,47 +50,48 @@ using namespace uc;
 
 extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample)(JNIEnv *env, jobject thiz)
 {
-    // If a C++ exception occurs in this, it replaces it with java.lang.RuntimeException.
+    // この中で発生した C++ 例外は、Java例外に置き換えられる。
     jni::exception_guard([&] {
 
-        // Declare Java Class FQCN and define its alias.
-        // The "Point" type defined here can be treated like a "jobject".
+        // Java android.graphics.Point クラスの C++上の別名として Point 型を定義する。
+        // Point型は "jobject" と同じように扱うことができる。
         DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
-        // Create Constructor Method
+        // コンストラクタメソッドを生成する。
         auto newPoint = jni::make_constructor<Point(int,int)>();
 
-        // Create Field Accessor
+        // フィールドへのアクセサを生成する。
         auto x = jni::make_field<Point, int>("x");  // Point.x
         auto y = jni::make_field<Point, int>("y");  // Point.y
 
-        // Create Method Accessor
+        // メソッドを生成する。
         auto toString = jni::make_method<jobject, std::string()>("toString"); // Object.toString()
         auto equals = jni::make_method<jobject, bool(jobject)>("equals");     // Object.equals(Object)
         auto offset = jni::make_method<Point, void(int,int)>("offset");       // Point.offset(int,int)
 
 
-        // Accessors do not use any extra memory.
+        // 上で作ったアクセサ類は、余計なメモリを一切消費しない。
         TEST_ASSERT_EQUALS(sizeof(newPoint), sizeof(jmethodID));
         TEST_ASSERT_EQUALS(sizeof(toString), sizeof(jmethodID));
         TEST_ASSERT_EQUALS(sizeof(x), sizeof(jfieldID));
 
 
-        // decltype(p0) == std::unique_ptr<Point,>. Resources are released automatically.
+        // decltype(p0) == std::unique_ptr<Point,>. リソースは自動的に解放される
         auto p0 = newPoint(12, 34);             // p0 = new Point(12, 34);
         auto p1 = newPoint(12, 34);             // p1 = new Point(12, 34);
         auto p2 = newPoint(123, 456);           // p2 = new Point(123, 456);
 
         LOGD << toString(p0);                   // p0.toString()
 
-        // Accessing Fields
+        // フィールドを参照する
         TEST_ASSERT_EQUALS(x.get(p0), 12);      // p0.x == 12
         TEST_ASSERT_EQUALS(y.get(p0), 34);      // p0.y == 34
 
-        // Calling Instance Methods
+        // メソッドを呼び出す
         TEST_ASSERT(equals(p0, p1));            // p0.equals(p1)
         TEST_ASSERT(!equals(p1, p2));           // !p1.equals(p2)
 
+        // フィールドを更新する
         x.set(p1, 123);                         // p1.x = 123;
         y.set(p1, 456);                         // p1.y = 456;
 
@@ -106,13 +109,13 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 
 ## Wrapper Class Builder Macros
 
-You can use helper macros from Ver.1.4.
+Ver.1.4 よりラッパークラス作成を容易にするヘルパーマクロを用意した。
 
-JNI resources are properly cached and overhead is minimized.
+JNIリソースは適切にキャッシュされ、JNI呼び出しのオーバーヘッドを最小限に抑えている。
 
 ```cpp
-// Define "Point_" class  as a wrapper for Java "android.graphics.Point" class.
-// "Point" is defined as an alias for Point_*.
+// Java android.graphics.Point クラスの ラッパーとして "Point_" クラスを定義する。
+// Point型は Point_* の別名として定義される。
 UC_JNI_DEFINE_JCLASS(Point, android/graphics/Point)
 {
     UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(int, int)             // Point(int, int)
@@ -129,7 +132,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
         auto p1 = Point_::new_(12, 34);       // p1 = new Point(12, 34);
         auto p2 = Point_::new_(123, 456);     // p2 = new Point(123, 456);
 
-        // you can use java.lang.Object method.
+        // java.lang.Object のメソッドは既に定義されている。
         LOGD << p0->toString();               // p0.toString()
 
         TEST_ASSERT_EQUALS(p0->x(), 12);      // p0.x == 12
@@ -157,8 +160,9 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 
 ## JNIEnv
 
-`JNIEnv* uc::jni::env()` works correctly from any thread call.
-[`AttachCurrentThread()`](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#AttachCurrentThread), [`DetachCurrentThread()`](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#DetachCurrentThread) are unnecessary because they are called at an appropriate timing.
+`JNIEnv* uc::jni::env()` はどのスレッドからでも JNIEnv* を取得することができる。
+
+[`AttachCurrentThread()`](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#AttachCurrentThread) や  [`DetachCurrentThread()`](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#DetachCurrentThread) は、ライブラリ内で適切に呼び出されるため、呼び出し側で実行する必要ない。
 
 ```cpp
     std::thread t([thiz]{
@@ -177,9 +181,9 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 
 ### Local References
 
-`uc::jni::local_ref<T>` is an alias for `std::unique_ptr<T,>`.
+`uc::jni::local_ref<T>` は `std::unique_ptr<T,>` の別名として定義されている。
 
-`DeleteLocalRef()` is called automatically.
+スコープが切れた時点で `DeleteLocalRef()` が自動的に呼び出される。
 
 ```cpp
     // local_ref<jclass>
@@ -187,15 +191,15 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 
     uc::jni::local_ref<jclass> superClazz { env->GetSuperclass(clazz.get()) };
 
-    // The following meanings are the same.
+    // 上の式は以下のように書くこともできる。
     // auto superClazz = uc::jni::get_super_class(clazz);
 ```
 
 ### Global References
 
-`global_ref<T>` is similar to `std::shared_ptr<T>`.
+`global_ref<T>` は `std::shared_ptr<T>` に似せて作られている。
 
-`DeleteGlobalRef()` is called automatically.
+やはり `DeleteGlobalRef()` が自動的に呼び出される。
 
 ```cpp
     // global_ref<jclass>
@@ -212,9 +216,7 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 
 ### Weak References
 
-`uc::jni::weak_ref<T>` can be handled like `std::weak_ptr<T>`.
-
-`DeleteWeakGlobalRef()` is called automatically.
+JNIの弱参照を扱う `uc::jni::weak_ref<T>` は、 `std::weak_ptr<T>` のように使うことができる。
 
 ```cpp
     uc::jni::weak_ref<jobject> wref = jobj;
@@ -230,13 +232,13 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 ## Resolve Classes
 
 
-It is not bad.
+以下の書き方は問題ない。
 
 ```cpp
     auto cls = uc::jni::find_class("java/lang/RuntimeException");
 ```
 
-The following method is recommended because it provides very fast cache access.
+が、以下のように書くとライブラリがキャッシュをつくり、高速にアクセスすることができる。
 ```cpp
     DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
 
@@ -248,64 +250,73 @@ The following method is recommended because it provides very fast cache access.
 
  [FAQ: Why didn't FindClass find my class?](https://developer.android.com/training/articles/perf-jni.html#faq_FindClass)
 
-> You can get into trouble if you create a thread yourself (perhaps by calling pthread_create and then attaching it with AttachCurrentThread). Now there are no stack frames from your application. If you call FindClass from this thread, the JavaVM will start in the "system" class loader instead of the one associated with your application, so attempts to find app-specific classes will fail.
+> 自分でスレッドを作成する (おそらくpthread_createを呼び出してAttachCurrentThreadをアタッチしたもの)と、問題になります。 今度は、アプリケーションからのスタックフレームはありません。 このスレッドからFindClassを呼び出すと、JavaVMはアプリケーションに関連付けられたクラスローダーではなく「システム」クラスローダーで開始されるため、アプリケーション固有のクラスの検索は失敗します。
 
 ```cpp
-    // java.lang.ClassNotFoundException is thrown.
+    // このままでは java.lang.ClassNotFoundException 例外が発生する
     std::async(std::launch::async, [] {
         auto cls = uc::jni::find_class("com/example/YourOwnClass");
     });
 ```
 
-> There are a few ways to work around this:
+> これを回避するにはいくつかの方法があります：
 
-- Do your FindClass lookups once, in JNI_OnLoad, and cache the class references for later use. 
-    ```cpp
-    DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
-    DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
-    DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
+>・ Do your FindClass lookups once, in JNI_OnLoad, and cache the class references for later use. (FindClassルックアップをJNI_OnLoadで一度行い、後で使用できるようにクラス参照をキャッシュします。)
+
+これは、`uc::jni::get_class()` によって行うことができる。
+
+```cpp
+DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
+DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
+DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
+    :
+
+jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
+{
+    uc::jni::java_vm(vm);
+
+    // create class caches
+    uc::jni::get_class<YourOwnClass1>();
+    uc::jni::get_class<YourOwnClass2>();
+    uc::jni::get_class<YourOwnClass3>();
         :
 
-    jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
-    {
-        uc::jni::java_vm(vm);
+    return JNI_VERSION_1_6;
+}
+```
+上記のように `uc::jni::get_class()` を1度呼び出せばキャッシュを作ることができるため、これ以降は `uc::jni::get_class()` をネイティブスレッドからも実行できるようになる。
+ただし、ネイティブスレッド上で呼び出される可能性のあるすべての「アプリケーション固有のクラス」について実行しなければならない。
 
-        // create class caches
-        uc::jni::get_class<YourOwnClass1>();
-        uc::jni::get_class<YourOwnClass2>();
-        uc::jni::get_class<YourOwnClass3>();
-            :
+> ・ Cache a reference to the ClassLoader object somewhere handy, and issue loadClass calls directly. (どこか便利なところに ClassLoaderオブジェクトへの参照をキャッシュし、loadClass 呼び出しを直接発行します。)
 
-        return JNI_VERSION_1_6;
-    }
-    ```
+このテクニックを実現するために、 `uc::jni::replace_with_class_loader_find_class()` を用意した。
 
-    Class caches created by these calls are only valid with `uc::jni::get_class()`.
+```cpp
+DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
+DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
+DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
 
-- Cache a reference to the ClassLoader object somewhere handy, and issue loadClass calls directly. 
+jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
+{
+    uc::jni::java_vm(vm);
 
-    ```cpp
-    DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
-    DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
-    DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
+    // テンプレート引数にはアプリケーション固有のクラスを指定する。
+    uc::jni::replace_with_class_loader_find_class<YourOwnClass1>();
 
-    jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
-    {
-        uc::jni::java_vm(vm);
+    return JNI_VERSION_1_6;
+}
+```
 
-        // create ClassLoader cache
-        uc::jni::replace_with_class_loader_find_class<YourOwnClass1>();
+ `uc::jni::find_class()` を呼び出す前に
 
-        return JNI_VERSION_1_6;
-    }
-    ```
+`uc::jni::replace_with_class_loader_find_class()` は、 `uc::jni::find_class()` の実装を `FindClass()` から `java.lang.ClassLoader#findClass()` に置き換える。
+この場合は、アプリケーション固有のクラスをどれか1つだけ、テンプレート引数に指定して実行すればよい。
 
-    `uc::jni::replace_with_class_loader_find_class()` replaces the implementation of `uc::jni::find_class()` API with `java.lang.ClassLoader#findClass()`.
-    This is implemented with reference to the code written [here](https://stackoverflow.com/questions/13263340/findclass-from-any-thread-in-android-jni).
+なお、この処理に関しては、[ここ](https://stackoverflow.com/questions/13263340/findclass-from-any-thread-in-android-jni) での議論を参考にしている。
 
 ## String Operations
 
-`jstring` and `std::basic_string` can convert to each other.
+`jstring` と `std::basic_string` は相互に変換することができる。
 
 ```cpp
 
@@ -315,7 +326,7 @@ The following method is recommended because it provides very fast cache access.
     std::string str = uc::jni::to_string(jstr);
 ```
 
-Supports C++11 UTF-16 string.
+C++11 UTF-16 string もサポートする。
 
 ```cpp
     auto jstr = uc::jni::to_jstring(u"こんにちは、世界！"); // japanese
@@ -323,7 +334,7 @@ Supports C++11 UTF-16 string.
     std::u16string str = uc::jni::to_u16string(jstr);
 ```
 
-`uc::jni::join` is more convenient to create `jstring`.
+`jstring` を作成するには `uc::jni::join` がより便利だ。
 
 ```cpp
 jstring returnString(JNIEnv* env, jobject obj, jstring str)
@@ -338,7 +349,7 @@ jstring returnString(JNIEnv* env, jobject obj, jstring str)
 
 ## Method ID, Field ID
 
-You have been freed from tedious ["type signatures"](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/types.html#type_signatures).
+面倒な **[タイプシグネチャ](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/types.html#type_signatures)** からは開放される。
 
 ```cpp
     DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
@@ -351,7 +362,7 @@ You have been freed from tedious ["type signatures"](https://docs.oracle.com/jav
     jmethodID methodId = uc::jni::get_static_method_id<System, void()>("gc");
 ```
 
-The following "function object" which is more convenient is recommended.
+上記より便利で型安全な、以下の **function object** の利用を推奨する。
 
 ```cpp
 DEFINE_JCLASS_ALIAS(System, java/lang/System);
@@ -375,10 +386,10 @@ void func(Point point)
 }
 ```
 
-The above `x` and `gc` can be treated like `jfieldID` , `jmethodID`. (copy, hold etc)
+上の `x` や `gc` は、実質 `jfieldID` , `jmethodID` と同じなため、同じように値をコピーして使ってよい。
 
 
-Other examples.
+その他の例
 
 ```cpp
     // boolean Object.equals(Object)
@@ -386,7 +397,7 @@ Other examples.
 
     // String Object.toString()
     auto toString = jni::make_method<jobject, jstring()>("toString"); 
-    auto toString2 = jni::make_method<jobject, std::string()>("toString"); // Convert to std::string and return it.
+    auto toString2 = jni::make_method<jobject, std::string()>("toString"); // 戻り値を std::string にすることもできる。
 
 
     DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
@@ -399,9 +410,9 @@ Other examples.
 
 ## Array Operations
 
-### Simple to Use
+### 簡単な使い方
 
-`jarray` and `std::vector` can convert to each other.
+`jarray` と `std::vector` の相互変換を提供する。
 
 ```cpp
     // jintArray to std::vector<jint>.
@@ -461,8 +472,8 @@ Other examples.
 
 ```
 
+以下は読み取り専用アクセスを提供する。
 
-The following are read only access.
 ```cpp
     // ReleaseArrayElements( mode = JNI_ABORT ) is called automatically.
     auto elems = uc::jni::get_const_elements(array);
@@ -493,8 +504,7 @@ The following are read only access.
 ```
 
 
-
-Use `uc::jni::array<T>` instead of `jobjectArray`.
+要素の型が不明な `jobjectArray` の代わりに `uc::jni::array<T>` を使用する。
 
 ```cpp
 

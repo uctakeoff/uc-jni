@@ -30,6 +30,37 @@ DEFINE_JCLASS_ALIAS(System, java/lang/System);
 DEFINE_JCLASS_ALIAS(Log, android/util/Log);
 DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
 
+
+UC_JNI_DEFINE_JCLASS(jPoint, android/graphics/Point)
+{
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR()
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(jPoint)
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(int, int)
+    UC_JNI_DEFINE_JCLASS_FIELD(int, x)
+    UC_JNI_DEFINE_JCLASS_FIELD(int, y)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, offset, int, int)
+};
+
+UC_JNI_DEFINE_JCLASS(InnerA, com/example/uc/ucjnitest/UcJniTest$InnerA)
+{
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR()
+    UC_JNI_DEFINE_JCLASS_METHOD(std::string, getString)
+    UC_JNI_DEFINE_JCLASS_FIELD(int, value)
+};
+
+UC_JNI_DEFINE_JCLASS_DERIVED(InnerB, com/example/uc/ucjnitest/UcJniTest$InnerB, InnerA)
+{
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR()
+    UC_JNI_DEFINE_JCLASS_METHOD(std::string, getString)
+};
+
+UC_JNI_DEFINE_JCLASS(jUcJniTest, com/example/uc/ucjnitest/UcJniTest)
+{
+   UC_JNI_DEFINE_JCLASS_STATIC_FIELD(std::string, staticFieldString)
+   UC_JNI_DEFINE_JCLASS_STATIC_METHOD(std::string, getStaticFieldString)
+};
+
+
 //*************************************************************************************************
 // Test sizeof
 //*************************************************************************************************
@@ -73,10 +104,65 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
     return JNI_VERSION_1_6;
 }
 
+void samplePoint()
+{
+        auto a = InnerA_::new_();
+        auto b = InnerB_::new_();
+        auto c = static_cast<InnerA>(b.get());
+
+        a->value(100);
+        b->value(200);
+        TEST_ASSERT_EQUALS(a->value(), 100);
+        TEST_ASSERT_EQUALS(b->value(), 200);
+        TEST_ASSERT_EQUALS(c->value(), 200);
+
+        TEST_ASSERT_EQUALS(a->getString(), "InnerA");
+        TEST_ASSERT_EQUALS(b->getString(), "InnerB");
+        TEST_ASSERT_EQUALS(c->getString(), "InnerB");
+
+        TEST_ASSERT_EQUALS(a->getStringNonVirtual(), "InnerA");
+        TEST_ASSERT_EQUALS(b->getStringNonVirtual(), "InnerB");
+        TEST_ASSERT_EQUALS(c->getStringNonVirtual(), "InnerA");
+
+        auto p0 = jPoint_::new_(12, 34);
+        auto p1 = jPoint_::new_(p0);
+        auto p2 = jPoint_::new_(123, 456);
+        LOGD << " tuple_size " << std::tuple_size<decltype(std::make_tuple())>::value;
+
+        LOGD << "#########################################";
+//        LOGD << "####" << getClassName(p0);
+        LOGD << "####" << getClassName(uc::jni::get_object_class(p0));
+        TEST_ASSERT_EQUALS(std::string(uc::jni::fqcn<jPoint>()), "android/graphics/Point");
+        TEST_ASSERT_EQUALS(getClassName(uc::jni::get_object_class(p0)), "android.graphics.Point");
+
+        LOGD << p0->toString() << ", " << p1->toString() << ", " << p2->toString();
+
+        TEST_ASSERT_EQUALS(p0->x(), 12);
+        TEST_ASSERT_EQUALS(p1->x(), 12);
+        TEST_ASSERT_EQUALS(p2->x(), 123);
+        TEST_ASSERT_EQUALS(p0->y(), 34);
+        TEST_ASSERT_EQUALS(p1->y(), 34);
+        TEST_ASSERT_EQUALS(p2->y(), 456);
+
+        TEST_ASSERT(p0->equals(p1.get()));
+        TEST_ASSERT(!p1->equals(p2.get()));
+
+        p1->x(123);
+        p1->y(456);
+
+        TEST_ASSERT(!p0->equals(p1));
+        TEST_ASSERT(p1->equals(p2));
+
+        p0->offset(100, 200);
+        TEST_ASSERT_EQUALS(p0->x(), 112);
+        TEST_ASSERT_EQUALS(p0->y(), 234);
+        LOGD << p0->toString() << ", " << p1->toString() << ", " << p2->toString();
+}
+
 JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
-
+samplePoint();
         DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
         const auto newPoint = uc::jni::make_constructor<Point(int,int)>();
