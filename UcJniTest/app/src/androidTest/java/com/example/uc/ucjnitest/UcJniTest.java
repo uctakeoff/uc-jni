@@ -22,16 +22,25 @@ public class UcJniTest {
     {
         public String getString()
         {
-            return "InnerA";
+            return value + " from InnerA";
         }
-        int value;
+        public void setString(String s)
+        {
+            value = s;
+        }
+        public void setString(InnerA a)
+        {
+            value = a.value;
+        }
+        String value;
     }
     class InnerB extends InnerA
     {
         public String getString()
         {
-            return "InnerB";
+            return value + " from InnerB";
         }
+
     }
 
 

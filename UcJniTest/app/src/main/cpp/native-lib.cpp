@@ -45,7 +45,9 @@ UC_JNI_DEFINE_JCLASS(InnerA, com/example/uc/ucjnitest/UcJniTest$InnerA)
 {
     UC_JNI_DEFINE_JCLASS_CONSTRUCTOR()
     UC_JNI_DEFINE_JCLASS_METHOD(std::string, getString)
-    UC_JNI_DEFINE_JCLASS_FIELD(int, value)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setString, std::string)
+    UC_JNI_DEFINE_JCLASS_OVERLOADED_METHOD(void, setString, InnerA_*)
+    UC_JNI_DEFINE_JCLASS_FIELD(std::string, value)
 };
 
 UC_JNI_DEFINE_JCLASS_DERIVED(InnerB, com/example/uc/ucjnitest/UcJniTest$InnerB, InnerA)
@@ -110,19 +112,24 @@ void samplePoint()
         auto b = InnerB_::new_();
         auto c = static_cast<InnerA>(b.get());
 
-        a->value(100);
-        b->value(200);
-        TEST_ASSERT_EQUALS(a->value(), 100);
-        TEST_ASSERT_EQUALS(b->value(), 200);
-        TEST_ASSERT_EQUALS(c->value(), 200);
+        a->value("a");
+        b->value("b");
+        TEST_ASSERT_EQUALS(a->value(), "a");
+        TEST_ASSERT_EQUALS(b->value(), "b");
+        TEST_ASSERT_EQUALS(c->value(), "b");
+        TEST_ASSERT_EQUALS(a->getString(), "a from InnerA");
+        TEST_ASSERT_EQUALS(b->getString(), "b from InnerB");
+        TEST_ASSERT_EQUALS(c->getString(), "b from InnerB");
+        TEST_ASSERT_EQUALS(a->getStringNonVirtual(), "a from InnerA");
+        TEST_ASSERT_EQUALS(b->getStringNonVirtual(), "b from InnerB");
+        TEST_ASSERT_EQUALS(c->getStringNonVirtual(), "b from InnerA");
 
-        TEST_ASSERT_EQUALS(a->getString(), "InnerA");
-        TEST_ASSERT_EQUALS(b->getString(), "InnerB");
-        TEST_ASSERT_EQUALS(c->getString(), "InnerB");
+        b->setString(a);
+        a->setString(std::string("A"));
+        TEST_ASSERT_EQUALS(a->getString(), "A from InnerA");
+        TEST_ASSERT_EQUALS(b->getString(), "a from InnerB");
+        TEST_ASSERT_EQUALS(c->getString(), "a from InnerB");
 
-        TEST_ASSERT_EQUALS(a->getStringNonVirtual(), "InnerA");
-        TEST_ASSERT_EQUALS(b->getStringNonVirtual(), "InnerB");
-        TEST_ASSERT_EQUALS(c->getStringNonVirtual(), "InnerA");
 
         auto p0 = jPoint_::new_(12, 34);
         auto p1 = jPoint_::new_(p0);
