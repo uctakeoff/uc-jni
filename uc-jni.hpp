@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.4.2"
-#define UC_JNI_VERSION_NUM 0x010402
+#define UC_JNI_VERSION "1.4.3"
+#define UC_JNI_VERSION_NUM 0x010403
 
 #include <jni.h>
 #include <memory>
@@ -180,6 +180,18 @@ private:
 template <typename JType> global_ref<native_ref<JType>> make_global(const JType& obj)
 {
     return global_ref<native_ref<JType>>(obj);
+}
+//! if JType is derived from jobject, return global_ref<JType>.
+template <typename JType, std::enable_if_t<is_derived_from_jobject<native_ref<JType>>::value, std::nullptr_t> = nullptr>
+global_ref<native_ref<JType>> make_global_or_primitive(const JType& obj)
+{
+    return global_ref<native_ref<JType>>(obj);
+}
+//! if JType is jni primitive type, return JType.
+template <typename JType, std::enable_if_t<is_primitive_type<JType>::value, std::nullptr_t> = nullptr>
+JType make_global_or_primitive(const JType& obj)
+{
+    return obj;
 }
 
 
@@ -1337,7 +1349,7 @@ namespace internal
         return field;\
     }\
     public:\
-    valueType fieldName() { return fieldName ## _accessor().get(this); }\
+    decltype(auto) fieldName() { return fieldName ## _accessor().get(this); }\
     decltype(auto) fieldName(const valueType& val) { fieldName ## _accessor().set(this, val); return *this; }
 
 
@@ -1383,9 +1395,17 @@ namespace internal
         return field;\
     }\
     public:\
-    static valueType fieldName() { return fieldName ## _accessor().get(); }\
+    static decltype(auto) fieldName() { return fieldName ## _accessor().get(); }\
     static void fieldName(const valueType& val) { fieldName ## _accessor().set(val); }
 
+//! define static final field accessor.
+#define UC_JNI_DEFINE_JCLASS_FINAL_STATIC_FIELD(valueType, fieldName) \
+    public:\
+    static decltype(auto) fieldName()\
+    {\
+        static const auto fieldValue = make_global_or_primitive(uc::jni::make_static_field<this_type, valueType>(#fieldName).get());\
+        return fieldValue;\
+    }
 
 //! define uc::jni::object
 UC_JNI_DEFINE_JCLASS_DERIVED(object, java/lang/Object, jobject)

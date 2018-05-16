@@ -66,8 +66,6 @@ public class UcJniTest {
     public String  fieldStringJp = "こんにちは、世界！";
     public int     fieldIntArray[] = {1, 2, 3, 4, 5};
 
-
-
     public static void setStaticFieldBool    (boolean value) { staticFieldBool = value; }
     public static void setStaticFieldByte    (byte    value) { staticFieldByte = value; }
     public static void setStaticFieldShort   (short   value) { staticFieldShort = value; }
