@@ -400,6 +400,14 @@ JNI(void, testWeakRef)(JNIEnv *env, jobject thiz)
             auto expected = std::vector<std::string>{"abc", "de", "fghij", "", "A"};
             TEST_ASSERT_EQUALS(expected, uc::jni::to_vector<std::string>(globalStringArray));
         }
+        TEST_ASSERT(globalStringArray);
+        {
+            auto expected = std::vector<std::string>{"abc", "de", "fghij", "", "A"};
+            auto actual = uc::jni::to_vector<uc::jni::local_ref<jstring>>(globalStringArray);
+            TEST_ASSERT(std::equal(expected.begin(), expected.end(), actual.begin(), actual.end(), [](auto& a, auto& b) { return a == uc::jni::to_string(b); }));
+        }
+
+
         auto jstr = uc::jni::to_jstring("Hello World");
 
         weakString = jstr;//uc::jni::weak_ref<jstring>(jstr);

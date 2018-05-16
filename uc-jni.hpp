@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.4.1"
-#define UC_JNI_VERSION_NUM 0x010401
+#define UC_JNI_VERSION "1.4.2"
+#define UC_JNI_VERSION_NUM 0x010402
 
 #include <jni.h>
 #include <memory>
@@ -117,7 +117,7 @@ template <typename JType> struct local_ref_deleter
 template <typename JType> using local_ref = std::unique_ptr<std::remove_pointer_t<JType>, local_ref_deleter<JType>>;
 template <typename JType> local_ref<JType> make_local(JType obj) noexcept
 {
-    return local_ref<JType>{obj};
+    return local_ref<JType>{ static_cast<JType>(env()->NewLocalRef(obj)) };
 }
 /*
 template <typename JType> using global_ref = std::shared_ptr<std::remove_pointer_t<JType>>;
@@ -216,7 +216,7 @@ public:
     }
     local_ref<JType> lock() const
     {
-        return make_local(static_cast<JType>(env()->NewLocalRef(impl.get())));
+        return make_local(static_cast<JType>(impl.get()));
     }
     bool expired() const
     {
@@ -256,7 +256,7 @@ inline local_ref<jclass> find_class_native(const char* fqcn)
 {
     auto o = env()->FindClass(fqcn);
     if (env()->ExceptionCheck()) throw vm_exception();
-    return make_local(o);
+    return local_ref<jclass>{o};
 }
 
 /*
@@ -269,7 +269,7 @@ namespace internal {
     inline std::function<local_ref<jclass>(const char*)> get_class_loader_find_class_method(const local_ref<jclass>& cls)
     {
         auto e = env();
-        auto getClassLoader = e->GetMethodID(make_local(e->GetObjectClass(cls.get())).get(), "getClassLoader", "()Ljava/lang/ClassLoader;");
+        auto getClassLoader = e->GetMethodID(local_ref<jclass>{e->GetObjectClass(cls.get())}.get(), "getClassLoader", "()Ljava/lang/ClassLoader;");
         auto classLoader = make_global(e->CallObjectMethod(cls.get(), getClassLoader));
         auto findClass = e->GetMethodID(find_class_native("java/lang/ClassLoader").get(), "findClass", "(Ljava/lang/String;)Ljava/lang/Class;");
         return [classLoader = std::move(classLoader), findClass](const char* fqcn) {
@@ -278,7 +278,7 @@ namespace internal {
                 env()->ExceptionClear();
                 return find_class_native(fqcn);
             }
-            return make_local(o);
+            return local_ref<jclass>{o};
         };
     }
     inline std::function<local_ref<jclass>(const char*)>& class_loader_find_class_cache(std::function<local_ref<jclass>(const char*)>&& cache = {})
@@ -454,7 +454,7 @@ template <typename T> struct type_traits<local_ref<T>>
 template <typename T> struct type_traits<global_ref<T>>
 {
     using jvalue_type = T;
-    static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
+    static global_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_global(v); }
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("L").append(fqcn<T>()).append(";"); }
 };
@@ -473,7 +473,7 @@ template <> struct type_traits<jobjectArray>
 
 template <typename JClass> local_ref<jclass> get_super_class(const JClass& clazz) noexcept
 {
-    return make_local(env()->GetSuperclass(to_native_ref(clazz)));
+    return local_ref<jclass>{ env()->GetSuperclass(to_native_ref(clazz)) };
 }
 template <typename JType> local_ref<jclass> get_super_class()
 {
@@ -489,7 +489,7 @@ template <typename JType1, typename JType2> bool is_assignable_from()
 }
 template <typename JType> local_ref<jclass> get_object_class(const JType& jobj) noexcept
 {
-    return make_local(env()->GetObjectClass(to_native_ref(jobj)));
+    return local_ref<jclass>{ env()->GetObjectClass(to_native_ref(jobj)) };
 }
 template <typename JType, typename JClass> bool is_instance_of(const JType& jobj, const JClass& clazz) noexcept
 {
@@ -581,7 +581,7 @@ template <typename T, typename Traits = string_traits<T>> decltype(auto) get_cha
 
 template <typename T, typename Traits = string_traits<T>> local_ref<jstring> to_jstring(const T* str, size_t n) noexcept
 {
-    return make_local(Traits::new_string(env(), str, static_cast<jsize>(n)));
+    return local_ref<jstring>{ Traits::new_string(env(), str, static_cast<jsize>(n)) };
 }
 template <typename T, typename Traits = string_traits<T>> local_ref<jstring> to_jstring(const std::basic_string<T>& str) noexcept
 {
@@ -769,15 +769,25 @@ template <typename T> struct type_traits<array<T>>
 };
 
 template <typename T> struct array_traits { using type = array<T>; };
-template <> struct array_traits<jboolean> { using type = jbooleanArray; };
-template <> struct array_traits<jbyte>    { using type = jbyteArray; };
-template <> struct array_traits<jchar>    { using type = jcharArray; };
-template <> struct array_traits<jshort>   { using type = jshortArray; };
-template <> struct array_traits<jint>     { using type = jintArray; };
-template <> struct array_traits<jlong>    { using type = jlongArray; };
-template <> struct array_traits<jfloat>   { using type = jfloatArray; };
-template <> struct array_traits<jdouble>  { using type = jdoubleArray; };
-template<typename T> using native_array_type = typename array_traits<typename type_traits<T>::jvalue_type>::type;
+template <typename T> struct array_element_traits;
+template <typename T> struct array_element_traits<array<T>> {using type = T; };
+template <> struct array_element_traits<jobjectArray> {using type = jobject; };
+
+#define DEFINE_ARRAY_TRAITS(elementType, arrayType)\
+template <> struct array_traits<elementType> { using type = arrayType; };\
+template <> struct array_element_traits<arrayType> { using type = elementType; }
+DEFINE_ARRAY_TRAITS(jboolean, jbooleanArray);
+DEFINE_ARRAY_TRAITS(jbyte   , jbyteArray);
+DEFINE_ARRAY_TRAITS(jchar   , jcharArray);
+DEFINE_ARRAY_TRAITS(jshort  , jshortArray);
+DEFINE_ARRAY_TRAITS(jint    , jintArray);
+DEFINE_ARRAY_TRAITS(jlong   , jlongArray);
+DEFINE_ARRAY_TRAITS(jfloat  , jfloatArray);
+DEFINE_ARRAY_TRAITS(jdouble , jdoubleArray);
+#undef DEFINE_ARRAY_TRAITS
+
+template<typename T> using native_array_t = typename array_traits<typename type_traits<T>::jvalue_type>::type;
+template<typename JArray> using native_array_element_t = typename array_element_traits<native_ref<JArray>>::type;
 
 template <typename T, std::enable_if_t<is_base_ptr_of<jarray, T>::value, std::nullptr_t> = nullptr>
 jsize length(T array) noexcept
@@ -790,10 +800,10 @@ jsize length(const T& array) noexcept
     return length(array.get());
 }
 
-template <typename T, typename Traits = function_traits<native_array_type<T>>, std::enable_if_t<is_primitive_type<T>::value, std::nullptr_t> = nullptr>
-local_ref<native_array_type<T>> new_array(jsize length)
+template <typename T, typename Traits = function_traits<native_array_t<T>>, std::enable_if_t<is_primitive_type<T>::value, std::nullptr_t> = nullptr>
+local_ref<native_array_t<T>> new_array(jsize length)
 {
-    return make_local(Traits::new_array(env(), length));
+    return local_ref<native_array_t<T>>{ Traits::new_array(env(), length) };
 }
 template <typename JArray, typename Traits = function_traits<native_ref<JArray>>, std::enable_if_t<is_primitive_array_type<native_ref<JArray>>::value, std::nullptr_t> = nullptr>
 void get_region(const JArray& array, jsize start, jsize len, typename Traits::value_type* buf)
@@ -875,35 +885,35 @@ template <typename Traits> typename const_array_elements<Traits>::pointer end(co
 // Object Array Operations
 //*************************************************************************************************
 
-template<typename T> using object_array_value_type = typename std::remove_pointer_t<native_ref<T>>::value_type;
-
 template <typename T, std::enable_if_t<is_derived_from_jobject<T>::value, std::nullptr_t> = nullptr>
 local_ref<array<T>> new_array(jsize length)
 {
-    return make_local(static_cast<array<T>>(env()->NewObjectArray(length, get_class<T>(), nullptr)));
+    return local_ref<array<T>>{ static_cast<array<T>>(env()->NewObjectArray(length, get_class<T>(), nullptr)) };
 }
-template <typename JObjArray, std::enable_if_t<is_derived_from_jobject<object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
+template <typename JObjArray, std::enable_if_t<is_derived_from_jobject<native_array_element_t<JObjArray>>::value, std::nullptr_t> = nullptr> 
 decltype(auto) get(const JObjArray& array, jsize index) noexcept
 {
-    return make_local(static_cast<object_array_value_type<JObjArray>>(env()->GetObjectArrayElement(to_native_ref(array), index)));
+    using jvalue_type = native_array_element_t<JObjArray>;
+    return local_ref<jvalue_type>{ static_cast<jvalue_type>(env()->GetObjectArrayElement(to_native_ref(array), index)) };
 }
-template <typename JObjArray, typename JType, std::enable_if_t<is_derived_from_jobject<object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
+template <typename JObjArray, typename JType, std::enable_if_t<is_derived_from_jobject<native_array_element_t<JObjArray>>::value, std::nullptr_t> = nullptr> 
 void set(JObjArray& array, jsize index, const JType& value) noexcept
 {
     env()->SetObjectArrayElement(to_native_ref(array), index, to_native_ref(value));
 }
-template <typename JObjArray, typename OutItr, typename F, std::enable_if_t<is_derived_from_jobject<object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
+template <typename JObjArray, typename OutItr, typename F, std::enable_if_t<is_derived_from_jobject<native_array_element_t<JObjArray>>::value, std::nullptr_t> = nullptr> 
 OutItr get_region(const JObjArray& array, jsize start, jsize len, OutItr itr, F transform)
 {
+    using jvalue_type = native_array_element_t<JObjArray>;
     const auto e = env();
     auto arr = to_native_ref(array);
     for (jsize i = start, ie = start + len; i < ie; ++i) {
-        *itr = transform(make_local(static_cast<object_array_value_type<JObjArray>>(e->GetObjectArrayElement(arr, i))));
+        *itr = transform(local_ref<jvalue_type>{ static_cast<jvalue_type>(e->GetObjectArrayElement(arr, i)) });
         ++itr;
     }
     return itr;
 }
-template <typename JObjArray, typename InItr, typename F, std::enable_if_t<is_derived_from_jobject<object_array_value_type<JObjArray>>::value, std::nullptr_t> = nullptr> 
+template <typename JObjArray, typename InItr, typename F, std::enable_if_t<is_derived_from_jobject<native_array_element_t<JObjArray>>::value, std::nullptr_t> = nullptr> 
 InItr set_region(JObjArray& array, jsize start, jsize len, InItr itr, F transform)
 {
     const auto e = env();
@@ -916,14 +926,14 @@ InItr set_region(JObjArray& array, jsize start, jsize len, InItr itr, F transfor
     return itr;
 }
 
-
-
+// T : bool
 template <typename T, typename JArray, std::enable_if_t<std::is_same<T, bool>::value && std::is_same<native_ref<JArray>, jbooleanArray>::value, std::nullptr_t> = nullptr> 
 std::vector<T> to_vector(const JArray& array)
 {
     auto elems = get_const_elements(array);
     return std::vector<bool>(jni::begin(elems), jni::end(elems));
 }
+// T : jni primitive type
 template <typename T, typename JArray, std::enable_if_t<is_primitive_type<T>::value && is_primitive_array_type<native_ref<JArray>>::value, std::nullptr_t> = nullptr> 
 std::vector<T> to_vector(const JArray& array)
 {
@@ -941,6 +951,7 @@ decltype(auto) to_vector(const JArray& array)
 template <typename T, typename JArray, std::enable_if_t<is_derived_from_jobject<typename type_traits<T>::jvalue_type>::value && is_derived_from_jobjectArray<native_ref<JArray>>::value, std::nullptr_t> = nullptr>
 std::vector<T> to_vector(const JArray& array)
 {
+    using jvalue_type = typename type_traits<T>::jvalue_type;
     std::vector<T> ret;
     auto arr = to_native_ref(array);
     if (arr) {
@@ -948,7 +959,7 @@ std::vector<T> to_vector(const JArray& array)
         const auto len = length(array);
         ret.reserve(len);
         for (jsize i = 0; i < len; ++i) {
-            auto lref = make_local(static_cast<typename type_traits<T>::jvalue_type>(e->GetObjectArrayElement(arr, i)));
+            auto lref = local_ref<jvalue_type>{ static_cast<jvalue_type>(e->GetObjectArrayElement(arr, i)) };
             ret.emplace_back(type_traits<T>::c_cast(lref.get()));
         }
     }
@@ -957,7 +968,7 @@ std::vector<T> to_vector(const JArray& array)
 
 
 template <typename T, std::enable_if_t<is_primitive_type<T>::value, std::nullptr_t> = nullptr> 
-local_ref<native_array_type<T>> to_jarray(const std::vector<T>& vec)
+local_ref<native_array_t<T>> to_jarray(const std::vector<T>& vec)
 {
     const auto len = static_cast<jsize>(vec.size());
     auto ret = new_array<T>(len);
@@ -973,7 +984,7 @@ local_ref<jbooleanArray> to_jarray(const std::vector<T>& vec)
     return ret;
 }
 template <typename T, std::enable_if_t<is_derived_from_jobject<typename type_traits<T>::jvalue_type>::value, std::nullptr_t> = nullptr> 
-local_ref<native_array_type<T>> to_jarray(const std::vector<T>& vec)
+local_ref<native_array_t<T>> to_jarray(const std::vector<T>& vec)
 {
     const auto e = env();
     const auto len = static_cast<jsize>(vec.size());
@@ -987,7 +998,7 @@ local_ref<native_array_type<T>> to_jarray(const std::vector<T>& vec)
 // Custom Traits
 template <typename T> struct type_traits<std::vector<T>>
 {
-    using jvalue_type = native_array_type<T>;
+    using jvalue_type = native_array_t<T>;
     static std::vector<T> c_cast(jvalue_type v) { return to_vector<T>(v); }
     static decltype(auto) j_cast(const std::vector<T>& v) { return to_jarray(v); }
     static constexpr decltype(auto) signature() noexcept { return type_traits<jvalue_type>::signature(); }
@@ -1169,7 +1180,7 @@ template <typename JType, typename... Args> struct constructor<JType(Args...)>
     {
         auto result = env()->NewObject(get_class<JType>(), id, to_native_ref(type_traits<Args>::j_cast(args))...);
         exception_check();
-        return make_local(static_cast<JType>(result));
+        return local_ref<JType>{ static_cast<JType>(result) };
     }
 
     jmethodID id{};
@@ -1224,7 +1235,7 @@ template <typename JType, size_t N> bool register_natives(const JNINativeMethod 
 
 inline local_ref<jobject> new_direct_byte_buffer(void* address, jlong capacity) noexcept
 {
-    return make_local(env()->NewDirectByteBuffer(address, capacity));
+    return local_ref<jobject>{ env()->NewDirectByteBuffer(address, capacity) };
 }
 
 
