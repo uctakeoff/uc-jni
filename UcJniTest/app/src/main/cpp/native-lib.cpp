@@ -28,7 +28,7 @@
 //*************************************************************************************************
 DEFINE_JCLASS_ALIAS(System, java/lang/System);
 DEFINE_JCLASS_ALIAS(Log, android/util/Log);
-DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
+// DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
 
 
 UC_JNI_DEFINE_JCLASS(jPoint, android/graphics/Point)
@@ -56,10 +56,73 @@ UC_JNI_DEFINE_JCLASS_DERIVED(InnerB, com/example/uc/ucjnitest/UcJniTest$InnerB, 
     UC_JNI_DEFINE_JCLASS_METHOD(std::string, getString)
 };
 
-UC_JNI_DEFINE_JCLASS(jUcJniTest, com/example/uc/ucjnitest/UcJniTest)
+UC_JNI_DEFINE_JCLASS(UcJniTest, com/example/uc/ucjnitest/UcJniTest)
 {
-   UC_JNI_DEFINE_JCLASS_STATIC_FIELD(std::string, staticFieldString)
-   UC_JNI_DEFINE_JCLASS_STATIC_METHOD(std::string, getStaticFieldString)
+    UC_JNI_DEFINE_JCLASS_STATIC_FIELD(jboolean, staticFieldBool);
+    UC_JNI_DEFINE_JCLASS_STATIC_FIELD(jbyte   , staticFieldByte);
+    UC_JNI_DEFINE_JCLASS_STATIC_FIELD(jshort  , staticFieldShort);
+    UC_JNI_DEFINE_JCLASS_STATIC_FIELD(jint    , staticFieldInt);
+    UC_JNI_DEFINE_JCLASS_STATIC_FIELD(jlong   , staticFieldLong);
+    UC_JNI_DEFINE_JCLASS_STATIC_FIELD(jfloat  , staticFieldFloat);
+    UC_JNI_DEFINE_JCLASS_STATIC_FIELD(jdouble , staticFieldDouble);
+    UC_JNI_DEFINE_JCLASS_STATIC_FIELD(std::string , staticFieldString);
+    UC_JNI_DEFINE_JCLASS_STATIC_FIELD(std::u16string , staticFieldStringJp);
+    UC_JNI_DEFINE_JCLASS_STATIC_FIELD(jintArray    , staticFieldIntArray);
+
+    UC_JNI_DEFINE_JCLASS_FIELD(jboolean, fieldBool);
+    UC_JNI_DEFINE_JCLASS_FIELD(jbyte   , fieldByte);
+    UC_JNI_DEFINE_JCLASS_FIELD(jshort  , fieldShort);
+    UC_JNI_DEFINE_JCLASS_FIELD(jint    , fieldInt);
+    UC_JNI_DEFINE_JCLASS_FIELD(jlong   , fieldLong);
+    UC_JNI_DEFINE_JCLASS_FIELD(jfloat  , fieldFloat);
+    UC_JNI_DEFINE_JCLASS_FIELD(jdouble , fieldDouble);
+    UC_JNI_DEFINE_JCLASS_FIELD(jstring , fieldString);
+    UC_JNI_DEFINE_JCLASS_FIELD(jstring , fieldStringJp);
+    UC_JNI_DEFINE_JCLASS_FIELD(jintArray, fieldIntArray);
+
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(void, setStaticFieldBool    , jboolean)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(void, setStaticFieldByte    , jbyte   )
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(void, setStaticFieldShort   , jshort  )
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(void, setStaticFieldInt     , jint    )
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(void, setStaticFieldLong    , jlong   )
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(void, setStaticFieldFloat   , jfloat  )
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(void, setStaticFieldDouble  , jdouble )
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(void, setStaticFieldString  , jstring )
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(void, setStaticFieldStringJp, jstring )
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(void, setStaticFieldIntArray, jintArray)
+
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jboolean, getStaticFieldBool)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jbyte   , getStaticFieldByte)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jshort  , getStaticFieldShort)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jint    , getStaticFieldInt)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jlong   , getStaticFieldLong)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jfloat  , getStaticFieldFloat)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jdouble , getStaticFieldDouble)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jstring , getStaticFieldString)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jstring , getStaticFieldStringJp)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jintArray,getStaticFieldIntArray)
+
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setFieldBool    , jboolean)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setFieldByte    , jbyte)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setFieldShort   , jshort)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setFieldInt     , jint)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setFieldLong    , jlong)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setFieldFloat   , jfloat)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setFieldDouble  , jdouble)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setFieldString  , jstring)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setFieldStringJp, jstring)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, setFieldIntArray, jintArray)
+
+    UC_JNI_DEFINE_JCLASS_METHOD(jboolean, getFieldBool)
+    UC_JNI_DEFINE_JCLASS_METHOD(jbyte   , getFieldByte)
+    UC_JNI_DEFINE_JCLASS_METHOD(jshort  , getFieldShort)
+    UC_JNI_DEFINE_JCLASS_METHOD(jint    , getFieldInt)
+    UC_JNI_DEFINE_JCLASS_METHOD(jlong   , getFieldLong)
+    UC_JNI_DEFINE_JCLASS_METHOD(jfloat  , getFieldFloat)
+    UC_JNI_DEFINE_JCLASS_METHOD(jdouble , getFieldDouble)
+    UC_JNI_DEFINE_JCLASS_METHOD(jstring , getFieldString)
+    UC_JNI_DEFINE_JCLASS_METHOD(jstring , getFieldStringJp)
+    UC_JNI_DEFINE_JCLASS_METHOD(jintArray, getFieldIntArray)
 };
 
 
@@ -400,6 +463,14 @@ JNI(void, testWeakRef)(JNIEnv *env, jobject thiz)
             auto expected = std::vector<std::string>{"abc", "de", "fghij", "", "A"};
             TEST_ASSERT_EQUALS(expected, uc::jni::to_vector<std::string>(globalStringArray));
         }
+        TEST_ASSERT(globalStringArray);
+        {
+            auto expected = std::vector<std::string>{"abc", "de", "fghij", "", "A"};
+            auto actual = uc::jni::to_vector<uc::jni::local_ref<jstring>>(globalStringArray);
+            TEST_ASSERT(std::equal(expected.begin(), expected.end(), actual.begin(), actual.end(), [](auto& a, auto& b) { return a == uc::jni::to_string(b); }));
+        }
+
+
         auto jstr = uc::jni::to_jstring("Hello World");
 
         weakString = jstr;//uc::jni::weak_ref<jstring>(jstr);
