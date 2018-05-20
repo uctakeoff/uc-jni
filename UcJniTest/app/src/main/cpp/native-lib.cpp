@@ -26,19 +26,21 @@
 //*************************************************************************************************
 // Class FQCN
 //*************************************************************************************************
-DEFINE_JCLASS_ALIAS(System, java/lang/System);
-DEFINE_JCLASS_ALIAS(Log, android/util/Log);
-// DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
+UC_JNI_DEFINE_JCLASS_ALIAS(System, java/lang/System);
+UC_JNI_DEFINE_JCLASS_ALIAS(Log, android/util/Log);
+// UC_JNI_DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
 
 
-UC_JNI_DEFINE_JCLASS(jPoint, android/graphics/Point)
+UC_JNI_DEFINE_JCLASS(jPoint, com/example/uc/ucjnitest/Point)
 {
-    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR()
+    UC_JNI_DEFINE_JCLASS_STATIC_FINAL_FIELD(jPoint, ZERO)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jPoint, add, jPoint, jPoint)
     UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(jPoint)
-    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(int, int)
-    UC_JNI_DEFINE_JCLASS_FIELD(int, x)
-    UC_JNI_DEFINE_JCLASS_FIELD(int, y)
-    UC_JNI_DEFINE_JCLASS_METHOD(void, offset, int, int)
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(double, double)
+    UC_JNI_DEFINE_JCLASS_FIELD(double, x)
+    UC_JNI_DEFINE_JCLASS_FIELD(double, y)
+    UC_JNI_DEFINE_JCLASS_METHOD(double, norm)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, multiply, double)
 };
 
 UC_JNI_DEFINE_JCLASS(InnerA, com/example/uc/ucjnitest/UcJniTest$InnerA)
@@ -169,7 +171,7 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
     return JNI_VERSION_1_6;
 }
 
-void samplePoint()
+void sampleCodeWithMacros()
 {
         auto a = InnerA_::new_();
         auto b = InnerB_::new_();
@@ -193,47 +195,51 @@ void samplePoint()
         TEST_ASSERT_EQUALS(b->getString(), "a from InnerB");
         TEST_ASSERT_EQUALS(c->getString(), "a from InnerB");
 
+        // Constructor Method
+        // p0,p1,p2 are smart pointer. release automatically.
+        auto p0 = jPoint_::new_(3, 4);       // p0 = new Point(12, 34);
+        auto p1 = jPoint_::new_(p0);         // p1 = new Point(p0);
+        LOGD << p0->toString() << ", " << p1->toString();
 
-        auto p0 = jPoint_::new_(12, 34);
-        auto p1 = jPoint_::new_(p0);
-        auto p2 = jPoint_::new_(123, 456);
-        LOGD << " tuple_size " << std::tuple_size<decltype(std::make_tuple())>::value;
+        // get field
+        TEST_ASSERT_EQUALS(p1->x(), 3);       // p1.x == 3
+        TEST_ASSERT_EQUALS(p1->y(), 4);       // p1.y == 4
 
-        LOGD << "#########################################";
-//        LOGD << "####" << getClassName(p0);
-        LOGD << "####" << getClassName(uc::jni::get_object_class(p0));
-        TEST_ASSERT_EQUALS(std::string(uc::jni::fqcn<jPoint>()), "android/graphics/Point");
-        TEST_ASSERT_EQUALS(getClassName(uc::jni::get_object_class(p0)), "android.graphics.Point");
+        // call method
+        TEST_ASSERT_EQUALS(p1->norm(), 5);    // p1.norm() == 5
 
-        LOGD << p0->toString() << ", " << p1->toString() << ", " << p2->toString();
+        // java.lang.Object methods are already defined.
+        TEST_ASSERT(p0->equals(p1));          // p0.equals(p1)
 
-        TEST_ASSERT_EQUALS(p0->x(), 12);
-        TEST_ASSERT_EQUALS(p1->x(), 12);
-        TEST_ASSERT_EQUALS(p2->x(), 123);
-        TEST_ASSERT_EQUALS(p0->y(), 34);
-        TEST_ASSERT_EQUALS(p1->y(), 34);
-        TEST_ASSERT_EQUALS(p2->y(), 456);
+        // set field
+        p1->x(30);                           // p1.x = 30;
+        p1->y(40);                           // p1.y = 40;
+        TEST_ASSERT(!p0->equals(p1));         // !p0.equals(p1)
 
-        TEST_ASSERT(p0->equals(p1.get()));
-        TEST_ASSERT(!p1->equals(p2.get()));
+        p0->multiply(10);
+        TEST_ASSERT(p0->equals(p1));          // p0.equals(p1)
+//        TEST_ASSERT(p0->toString(), std::string("(30,40)"));
+        LOGD << p0->toString() << ", " << p1->toString();
 
-        p1->x(123);
-        p1->y(456);
+        // get static final field
+        TEST_ASSERT_EQUALS(jPoint_::ZERO()->x(), 0);
+        TEST_ASSERT_EQUALS(jPoint_::ZERO()->y(), 0);
 
-        TEST_ASSERT(!p0->equals(p1));
-        TEST_ASSERT(p1->equals(p2));
-
-        p0->offset(100, 200);
-        TEST_ASSERT_EQUALS(p0->x(), 112);
-        TEST_ASSERT_EQUALS(p0->y(), 234);
+        // call static method
+        auto p2 = jPoint_::add(p0, p1);
+        TEST_ASSERT_EQUALS(p2->x(), 60);
+        TEST_ASSERT_EQUALS(p2->y(), 80);
         LOGD << p0->toString() << ", " << p1->toString() << ", " << p2->toString();
 }
 
 JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
-samplePoint();
-        DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+
+        sampleCodeWithMacros();
+
+
+        UC_JNI_DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
         const auto newPoint = uc::jni::make_constructor<Point(int,int)>();
 
@@ -257,7 +263,7 @@ samplePoint();
         LOGD << "#########################################";
 //        LOGD << "####" << getClassName(p0);
         LOGD << "####" << getClassName(uc::jni::get_object_class(p0));
-        TEST_ASSERT_EQUALS(std::string(Point_impl::fqcn()), "android/graphics/Point");
+        TEST_ASSERT_EQUALS(std::string(Point_::fqcn()), "android/graphics/Point");
         TEST_ASSERT_EQUALS(getClassName(uc::jni::get_object_class(p0)), "android.graphics.Point");
 
         LOGD << toString(p0) << ", " << toString(p1) << ", " << toString(p2);
@@ -334,7 +340,7 @@ JNI(void, testResolveClass)(JNIEnv *env, jobject thiz)
     uc::jni::exception_guard([&] {
         using namespace std::chrono;
         using clock_type = std::chrono::high_resolution_clock;
-        DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+        UC_JNI_DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
         const auto loopCount = 100000;
         {
@@ -1233,7 +1239,7 @@ JNI(void, testMonitor)(JNIEnv *env, jobject thiz, jobject point)
 {
     uc::jni::exception_guard([&] {
 std::this_thread::sleep_for(std::chrono::seconds(1));
-        DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+        UC_JNI_DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
         auto s = uc::jni::synchronized(point);
         auto x = uc::jni::make_field<Point, int>("x");
         x.set(point, x.get(point) + 1);
@@ -1243,7 +1249,7 @@ JNI(void, testMonitorAsync)(JNIEnv *env, jobject thiz, jobject p)
 {
     uc::jni::exception_guard([&] {
         std::thread t([point = uc::jni::make_global(p)] {
-            DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+            UC_JNI_DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
             auto s = uc::jni::synchronized(point);
             auto x = uc::jni::make_field<Point, int>("x");
             x.set(point, x.get(point) + 1);
@@ -1278,11 +1284,11 @@ JNI(void, testDirectBuffer)(JNIEnv *env, jobject thiz, jobject point)
 //*************************************************************************************************
 #include <deque>
 #include <map>
-DEFINE_JCLASS_ALIAS(HashMap, java/util/HashMap);
-DEFINE_JCLASS_ALIAS(MapEntry, java/util/Map$Entry);
-DEFINE_JCLASS_ALIAS(Set, java/util/Set);
-DEFINE_JCLASS_ALIAS(Iterator, java/util/Iterator);
-DEFINE_JCLASS_ALIAS(Integer, java/lang/Integer);
+UC_JNI_DEFINE_JCLASS_ALIAS(HashMap, java/util/HashMap);
+UC_JNI_DEFINE_JCLASS_ALIAS(MapEntry, java/util/Map$Entry);
+UC_JNI_DEFINE_JCLASS_ALIAS(Set, java/util/Set);
+UC_JNI_DEFINE_JCLASS_ALIAS(Iterator, java/util/Iterator);
+UC_JNI_DEFINE_JCLASS_ALIAS(Integer, java/lang/Integer);
 
 namespace uc {
 namespace jni {
