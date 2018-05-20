@@ -113,7 +113,7 @@ As a result, the C ++ wrapper class `jPoint` of the` com.example.uc.ucjnitest.Po
 This can be used as follows.
 
 ```cpp
-    // この中で発生した C++ 例外は、Java例外に置き換えられる。
+    // If a C++ exception occurs in this, it replaces it with java.lang.Throwable.
     uc::jni::exception_guard([&] {
 
         // Constructor Method
