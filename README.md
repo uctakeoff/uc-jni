@@ -1,7 +1,7 @@
 # uc-jni
  [日本語ドキュメント(Japanese)](https://github.com/uctakeoff/uc-jni/blob/master/READMEjp.md)
 
-uc::jni is a Java Native Interface (JNI) wrapper library created C++14 single-header.
+*uc-jni* is a Java Native Interface (JNI) wrapper library created C++14 single-header.
 
 
 # Install
@@ -85,9 +85,9 @@ public class Point {
         y *= v;
     }
 
-    @Override public String toString() {...}         // 省略
-    @Override public int hashCode() {...}            // 省略
-    @Override public boolean equals(Object o) {...}  // 省略
+    @Override public String toString() {...} 
+    @Override public int hashCode() {...}
+    @Override public boolean equals(Object o) {...}
 }
 ```
 For the above Java code, in C ++, write as follows.
@@ -179,7 +179,7 @@ In addition to the method / field API as in the above sample, various JNI functi
 `uc::jni::local_ref<T>` is an alias for `std::unique_ptr<T,>`.
 
 `DeleteLocalRef()` is called automatically.
-uc-jni functions normally returns a "JNI object" in this form.
+*uc-jni* functions normally returns a "JNI object" in this form.
 
 
 ```cpp
@@ -229,7 +229,7 @@ A global reference is created by `NewGlobalRef()` at the time of assignment, and
 
 ## Resolve Classes
 
-There is also a wrapper function of `FindClass()`, but you should not normally use this if you use uc-jni.
+There is also a wrapper function of `FindClass()`, but you should not normally use this if you use *uc-jni*.
 
 ```cpp
     // I do not recommend
