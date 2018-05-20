@@ -309,8 +309,6 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 }
 ```
 
- `uc::jni::find_class()` を呼び出す前に
-
 `uc::jni::replace_with_class_loader_find_class()` は、 `uc::jni::find_class()` の実装を `FindClass()` から `java.lang.ClassLoader#findClass()` に置き換える。
 この場合は、アプリケーション固有のクラスをどれか1つだけ、テンプレート引数に指定して実行すればよい。
 
