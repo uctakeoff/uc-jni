@@ -1,5 +1,5 @@
 # uc-jni
-uc::jni は C++14 シングルヘッダで書かれた Java Native Interface (JNI) のラッパーライブラリである。
+uc-jni は C++14 シングルヘッダで書かれた Java Native Interface (JNI) のラッパーライブラリである。
 
 * [Qiita 記事](https://qiita.com/uctakeoff/items/3160031712dadbacfc97)
 
@@ -27,7 +27,7 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 **もし、ネイティブスレッド ( pthread_create, std::thread, std::async...)上で `uc::jni::find_class()`/`uc::jni::get_class()` を呼び出す場合は `uc::jni::replace_with_class_loader_find_class()` も1度だけ呼び出しておく。**
 
 ```cpp
-DEFINE_JCLASS_ALIAS(YourOwnClass, com/example/YourOwnClass);
+UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass, com/example/YourOwnClass);
 
 jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 {
@@ -45,124 +45,121 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 
 # Example
 
-```cpp
-using namespace uc;
-
-extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample)(JNIEnv *env, jobject thiz)
-{
-    // この中で発生した C++ 例外は、Java例外に置き換えられる。
-    jni::exception_guard([&] {
-
-        // Java android.graphics.Point クラスの C++上の別名として Point 型を定義する。
-        // Point型は "jobject" と同じように扱うことができる。
-        DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
-
-        // コンストラクタメソッドを生成する。
-        auto newPoint = jni::make_constructor<Point(int,int)>();
-
-        // フィールドへのアクセサを生成する。
-        auto x = jni::make_field<Point, int>("x");  // Point.x
-        auto y = jni::make_field<Point, int>("y");  // Point.y
-
-        // メソッドを生成する。
-        auto toString = jni::make_method<jobject, std::string()>("toString"); // Object.toString()
-        auto equals = jni::make_method<jobject, bool(jobject)>("equals");     // Object.equals(Object)
-        auto offset = jni::make_method<Point, void(int,int)>("offset");       // Point.offset(int,int)
-
-
-        // 上で作ったアクセサ類は、余計なメモリを一切消費しない。
-        TEST_ASSERT_EQUALS(sizeof(newPoint), sizeof(jmethodID));
-        TEST_ASSERT_EQUALS(sizeof(toString), sizeof(jmethodID));
-        TEST_ASSERT_EQUALS(sizeof(x), sizeof(jfieldID));
-
-
-        // decltype(p0) == std::unique_ptr<Point,>. リソースは自動的に解放される
-        auto p0 = newPoint(12, 34);             // p0 = new Point(12, 34);
-        auto p1 = newPoint(12, 34);             // p1 = new Point(12, 34);
-        auto p2 = newPoint(123, 456);           // p2 = new Point(123, 456);
-
-        LOGD << toString(p0);                   // p0.toString()
-
-        // フィールドを参照する
-        TEST_ASSERT_EQUALS(x.get(p0), 12);      // p0.x == 12
-        TEST_ASSERT_EQUALS(y.get(p0), 34);      // p0.y == 34
-
-        // メソッドを呼び出す
-        TEST_ASSERT(equals(p0, p1));            // p0.equals(p1)
-        TEST_ASSERT(!equals(p1, p2));           // !p1.equals(p2)
-
-        // フィールドを更新する
-        x.set(p1, 123);                         // p1.x = 123;
-        y.set(p1, 456);                         // p1.y = 456;
-
-        TEST_ASSERT(!equals(p0, p1));
-        TEST_ASSERT(equals(p1, p2));
-
-        offset(p0, 100, 200);                   // p0.offset(100, 200);
-        TEST_ASSERT_EQUALS(x.get(p0), 112);
-        TEST_ASSERT_EQUALS(y.get(p0), 234);
-
-        LOGD << toString(p0) << ", " << toString(p1) << ", " << toString(p2);
-    });
-}
-```
 
 ## Wrapper Class Builder Macros
 
 Ver.1.4 よりラッパークラス作成を容易にするヘルパーマクロを用意した。
 
-JNIリソースは適切にキャッシュされ、JNI呼び出しのオーバーヘッドを最小限に抑えている。
+シンプルな記述で適切にメソッド・フィールドを取得できる上、JNIリソースは適切にキャッシュされ、JNI呼び出しのオーバーヘッドを最小限に抑えられる。
+
+```java
+package com.example.uc.ucjnitest;
+import java.util.Objects;
+
+public class Point {
+    public static final Point ZERO = new Point(0, 0);
+
+    public static Point add(Point a, Point b)
+    {
+        return new Point(a.x + b.x, a.y + b.y);
+    }
+
+    private double x, y;
+
+    Point(double x, double y)
+    {
+        this.x = x;
+        this.y = y;
+    }
+    Point(Point p)
+    {
+        this.x = p.x;
+        this.y = p.y;
+    }
+    double norm()
+    {
+        return Math.sqrt(x * x + y * y);
+    }
+    void multiply(double v)
+    {
+        x *= v;
+        y *= v;
+    }
+
+    @Override public String toString() {...}         // 省略
+    @Override public int hashCode() {...}            // 省略
+    @Override public boolean equals(Object o) {...}  // 省略
+}
+```
+上記のような Java コードに対して、C++側で以下のようにマクロを記述する。
 
 ```cpp
-// Java android.graphics.Point クラスの ラッパーとして "Point_" クラスを定義する。
-// Point型は Point_* の別名として定義される。
-UC_JNI_DEFINE_JCLASS(Point, android/graphics/Point)
+// Java com/example/uc/ucjnitest/Point クラスの ラッパーとして "jPoint_" クラスを定義する。
+// jPoint 型は jPoint_* の別名として定義される。
+UC_JNI_DEFINE_JCLASS(jPoint, com/example/uc/ucjnitest/Point)
 {
-    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(int, int)             // Point(int, int)
-    UC_JNI_DEFINE_JCLASS_FIELD(int, x)                     // Point#x
-    UC_JNI_DEFINE_JCLASS_FIELD(int, y)                     // Point#y
-    UC_JNI_DEFINE_JCLASS_METHOD(void, offset, int, int)    // void Point#offset(int, int)
+    UC_JNI_DEFINE_JCLASS_STATIC_FINAL_FIELD(jPoint, ZERO)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jPoint, add, jPoint, jPoint)
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(double, double)
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(jPoint)
+    UC_JNI_DEFINE_JCLASS_FIELD(double, x)
+    UC_JNI_DEFINE_JCLASS_FIELD(double, y)
+    UC_JNI_DEFINE_JCLASS_METHOD(double, norm)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, multiply, double)
 };
+```
 
-extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample)(JNIEnv *env, jobject thiz)
-{
+必ずしもすべて書く必要はない。
+これにより、`com.example.uc.ucjnitest.Point` クラスの C++ラッパークラス `jPoint` が定義された。
+これは、以下のようにして使うことができる。
+
+```cpp
+    // この中で発生した C++ 例外は、Java例外に置き換えられる。
     uc::jni::exception_guard([&] {
 
-        auto p0 = Point_::new_(12, 34);       // p0 = new Point(12, 34);
-        auto p1 = Point_::new_(12, 34);       // p1 = new Point(12, 34);
-        auto p2 = Point_::new_(123, 456);     // p2 = new Point(123, 456);
+        // コンストラクタメソッド
+        // p0,p1 は Point のスマートポインタとなっていて、スコープを抜けると自動的に解放される。
+        auto p0 = jPoint_::new_(3, 4);       // p0 = new Point(12, 34);
+        auto p1 = jPoint_::new_(p0);         // p1 = new Point(p0);
+
+        // フィールドの取得
+        TEST_ASSERT_EQUALS(p1->x(), 3);       // p1.x == 3
+        TEST_ASSERT_EQUALS(p1->y(), 4);       // p1.y == 4
+
+        // メソッド呼び出し
+        TEST_ASSERT_EQUALS(p1->norm(), 5);    // p1.norm() == 5
 
         // java.lang.Object のメソッドは既に定義されている。
-        LOGD << p0->toString();               // p0.toString()
-
-        TEST_ASSERT_EQUALS(p0->x(), 12);      // p0.x == 12
-        TEST_ASSERT_EQUALS(p0->y(), 34);      // p0.y == 34
-
         TEST_ASSERT(p0->equals(p1));          // p0.equals(p1)
-        TEST_ASSERT(!p1->equals(p2));         // !p1.equals(p2)
 
-        p1->x(123);                           // p1.x = 123;
-        p1->y(456);                           // p1.y = 456;
-
+        // フィールドの更新
+        p1->x(30);                           // p1.x = 30;
+        p1->y(40);                           // p1.y = 40;
         TEST_ASSERT(!p0->equals(p1));         // !p0.equals(p1)
-        TEST_ASSERT(p1->equals(p2));          // p1.equals(p2)
 
-        p0->offset(100, 200);                 // p0.offset(100, 200);
-        TEST_ASSERT_EQUALS(p0->x(), 112);     // p0.x == 112
-        TEST_ASSERT_EQUALS(p0->y(), 234);     // p0.y == 234
+        // static フィールドの取得
+        TEST_ASSERT_EQUALS(jPoint_::ZERO()->x(), 0);
+        TEST_ASSERT_EQUALS(jPoint_::ZERO()->y(), 0);
 
+        // static メソッド呼び出し
+        auto p2 = jPoint_::add(p0, p1);
+        TEST_ASSERT_EQUALS(p2->x(), 60);
+        TEST_ASSERT_EQUALS(p2->y(), 80);
+
+        // Object.toString() は std::string を返す。
         LOGD << p0->toString() << ", " << p1->toString() << ", " << p2->toString();
     });
-}
 ```
 
 # Detail
 
+上記サンプルにあるようなメソッド・フィールドAPIだけでなく、配列操作や文字列操作など、各種のJNI関数をラッピングして提供している。
+
 ## JNIEnv
 
-`JNIEnv* uc::jni::env()` はどのスレッドからでも JNIEnv* を取得することができる。
+`JNIEnv* uc::jni::env()` はどのスレッドからでも `JNIEnv*` を取得することができる。
 
-[`AttachCurrentThread()`](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#AttachCurrentThread) や  [`DetachCurrentThread()`](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#DetachCurrentThread) は、ライブラリ内で適切に呼び出されるため、呼び出し側で実行する必要ない。
+[`AttachCurrentThread()`](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#AttachCurrentThread) や  [`DetachCurrentThread()`](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#DetachCurrentThread) は、ライブラリ内で適切に呼び出されるため、呼び出し側で実行する必要はない。
 
 ```cpp
     std::thread t([thiz]{
@@ -184,34 +181,35 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 `uc::jni::local_ref<T>` は `std::unique_ptr<T,>` の別名として定義されている。
 
 スコープが切れた時点で `DeleteLocalRef()` が自動的に呼び出される。
+uc-jni のラッパー関数は、通常 JNIオブジェクトをこの形で返す。
+
 
 ```cpp
-    // local_ref<jclass>
-    auto clazz = jni::make_local(env->GetObjectClass(thiz));
-
-    uc::jni::local_ref<jclass> superClazz { env->GetSuperclass(clazz.get()) };
-
-    // 上の式は以下のように書くこともできる。
-    // auto superClazz = uc::jni::get_super_class(clazz);
+    // clazz, superClazz は自動的に解放される。
+    auto clazz = uc::jni::get_object_class(thiz);
+    auto superClazz = uc::jni::get_super_class(clazz);
 ```
+
+また、ヘルパー関数 `uc::jni::make_local()` を使うと、明示的に `NewLocalRef()` を呼び出してローカル参照を作る。
+
 
 ### Global References
 
 `global_ref<T>` は `std::shared_ptr<T>` に似せて作られている。
 
-やはり `DeleteGlobalRef()` が自動的に呼び出される。
+代入時に `NewGlobalRef()` によってグローバル参照が作られ、参照カウントが0になった時点で `DeleteGlobalRef()` が呼び出される。
+
+ヘルパー関数として `uc::jni::make_global()` が用意されている。
+
 
 ```cpp
     // global_ref<jclass>
-    auto clazz = jni::make_global(env->GetObjectClass(thiz));
+    auto clazz = uc::jni::make_global(uc::jni::get_object_class(thiz));
 
-    // Assignment is also safe.
-    uc::jni::global_ref<jclass> superClazz{};
-    superClazz = env->GetSuperclass(clazz.get());
-
-    // It is also possible to substitute local_ref. 
-    // Ownership does not shift and a new Global Reference can be created.
-    superClazz = uc::jni::get_super_class(clazz);
+    // local_ref や jobject を直接代入できる.
+    // 所有権の移動はなく、新しいグローバル参照を作る。
+    uc::jni::global_ref<jclass> superClazz = uc::jni::get_super_class(clazz);
+    superClazz =  env->GetSuperclass(clazz.get());
 ```
 
 ### Weak References
@@ -231,18 +229,22 @@ JNIの弱参照を扱う `uc::jni::weak_ref<T>` は、 `std::weak_ptr<T>` のよ
 
 ## Resolve Classes
 
-
-以下の書き方は問題ない。
+`FindClass()` のラッパー関数もあるが、uc-jni を利用するなら通常はこれを使うべきではない。
 
 ```cpp
+    // おすすめしない
     auto cls = uc::jni::find_class("java/lang/RuntimeException");
 ```
 
-が、以下のように書くとライブラリがキャッシュをつくり、高速にアクセスすることができる。
-```cpp
-    DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
+`uc::jni::get_class()` は、非常に効率の良いキャッシュ機能を提供する。
 
-    // jclass instance is cached. Must not release it.
+最小のコストで、非常に高速なアクセスを提供する。
+
+```cpp
+    // 事前にマクロでラッパークラス定義をしておく必要がある。
+    UC_JNI_DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
+
+    // これは特別に生の jclass を返す。キャッシュなので解放してはならない。
     jclass cls = uc::jni::get_class<RuntimeException>();
 ```
 
@@ -266,9 +268,9 @@ JNIの弱参照を扱う `uc::jni::weak_ref<T>` は、 `std::weak_ptr<T>` のよ
 これは、`uc::jni::get_class()` によって行うことができる。
 
 ```cpp
-DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
-DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
-DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
+UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
+UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
+UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
     :
 
 jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
@@ -292,9 +294,9 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 このテクニックを実現するために、 `uc::jni::replace_with_class_loader_find_class()` を用意した。
 
 ```cpp
-DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
-DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
-DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
+UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
+UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
+UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
 
 jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 {
@@ -352,12 +354,12 @@ jstring returnString(JNIEnv* env, jobject obj, jstring str)
 面倒な **[タイプシグネチャ](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/types.html#type_signatures)** からは開放される。
 
 ```cpp
-    DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+    UC_JNI_DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
     jfieldID fieldId = uc::jni::get_field_id<Point, int>("x");
 
 
-    DEFINE_JCLASS_ALIAS(System, java/lang/System);
+    UC_JNI_DEFINE_JCLASS_ALIAS(System, java/lang/System);
 
     jmethodID methodId = uc::jni::get_static_method_id<System, void()>("gc");
 ```
@@ -365,12 +367,18 @@ jstring returnString(JNIEnv* env, jobject obj, jstring str)
 上記より便利で型安全な、以下の **function object** の利用を推奨する。
 
 ```cpp
-DEFINE_JCLASS_ALIAS(System, java/lang/System);
-DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+UC_JNI_DEFINE_JCLASS_ALIAS(System, java/lang/System);
+UC_JNI_DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
 void func(Point point)
 {
-    auto x = uc::jni::make_field<Point, int>("x");  // Point.x
+    // Point#Point(int, int)
+    auto newPoint = uc::jni::make_constructor<Point(int,int)>();
+
+    auto point = newPoint(10, 20);
+
+    // Point#x
+    auto x = uc::jni::make_field<Point, int>("x");
 
     // valueX = point.x;
     int valueX = x.get(point);
@@ -400,7 +408,7 @@ void func(Point point)
     auto toString2 = jni::make_method<jobject, std::string()>("toString"); // 戻り値を std::string にすることもできる。
 
 
-    DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
+    UC_JNI_DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
 
     // String[] UcJniTest.getFieldStringArray()
     auto getFieldStringArray = uc::jni::make_method<UcJniTest, uc::jni::array<jstring>()>("getFieldStringArray");

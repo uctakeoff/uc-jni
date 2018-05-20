@@ -1,7 +1,7 @@
 # uc-jni
  [日本語ドキュメント(Japanese)](https://github.com/uctakeoff/uc-jni/blob/master/READMEjp.md)
 
-uc::jni is a Java Native Interface (JNI) wrapper library created C++14 single-header.
+*uc-jni* is a Java Native Interface (JNI) wrapper library created C++14 single-header.
 
 
 # Install
@@ -26,11 +26,12 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 **If you call `uc::jni::find_class()`/`uc::jni::get_class()` in native thread ( pthread_create(), std::thread, std::async...), also call `uc::jni::replace_with_class_loader_find_class()`**.
 
 ```cpp
-DEFINE_JCLASS_ALIAS(YourOwnClass, com/example/YourOwnClass);
+UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass, com/example/YourOwnClass);
 
 jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 {
     uc::jni::java_vm(vm);
+
     // call before find_class() / get_class()
     uc::jni::replace_with_class_loader_find_class<YourOwnClass>();
 
@@ -43,66 +44,6 @@ see also [FindClass in native thread](#findclass-in-native-thread).
 
 # Example
 
-```cpp
-using namespace uc;
-
-extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample)(JNIEnv *env, jobject thiz)
-{
-    // If a C++ exception occurs in this, it replaces it with java.lang.RuntimeException.
-    jni::exception_guard([&] {
-
-        // Declare Java Class FQCN and define its alias.
-        // The "Point" type defined here can be treated like a "jobject".
-        DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
-
-        // Create Constructor Method
-        auto newPoint = jni::make_constructor<Point(int,int)>();
-
-        // Create Field Accessor
-        auto x = jni::make_field<Point, int>("x");  // Point.x
-        auto y = jni::make_field<Point, int>("y");  // Point.y
-
-        // Create Method Accessor
-        auto toString = jni::make_method<jobject, std::string()>("toString"); // Object.toString()
-        auto equals = jni::make_method<jobject, bool(jobject)>("equals");     // Object.equals(Object)
-        auto offset = jni::make_method<Point, void(int,int)>("offset");       // Point.offset(int,int)
-
-
-        // Accessors do not use any extra memory.
-        TEST_ASSERT_EQUALS(sizeof(newPoint), sizeof(jmethodID));
-        TEST_ASSERT_EQUALS(sizeof(toString), sizeof(jmethodID));
-        TEST_ASSERT_EQUALS(sizeof(x), sizeof(jfieldID));
-
-
-        // decltype(p0) == std::unique_ptr<Point,>. Resources are released automatically.
-        auto p0 = newPoint(12, 34);             // p0 = new Point(12, 34);
-        auto p1 = newPoint(12, 34);             // p1 = new Point(12, 34);
-        auto p2 = newPoint(123, 456);           // p2 = new Point(123, 456);
-
-        LOGD << toString(p0);                   // p0.toString()
-
-        // Accessing Fields
-        TEST_ASSERT_EQUALS(x.get(p0), 12);      // p0.x == 12
-        TEST_ASSERT_EQUALS(y.get(p0), 34);      // p0.y == 34
-
-        // Calling Instance Methods
-        TEST_ASSERT(equals(p0, p1));            // p0.equals(p1)
-        TEST_ASSERT(!equals(p1, p2));           // !p1.equals(p2)
-
-        x.set(p1, 123);                         // p1.x = 123;
-        y.set(p1, 456);                         // p1.y = 456;
-
-        TEST_ASSERT(!equals(p0, p1));
-        TEST_ASSERT(equals(p1, p2));
-
-        offset(p0, 100, 200);                   // p0.offset(100, 200);
-        TEST_ASSERT_EQUALS(x.get(p0), 112);
-        TEST_ASSERT_EQUALS(y.get(p0), 234);
-
-        LOGD << toString(p0) << ", " << toString(p1) << ", " << toString(p2);
-    });
-}
-```
 
 ## Wrapper Class Builder Macros
 
@@ -110,50 +51,108 @@ You can use helper macros from Ver.1.4.
 
 JNI resources are properly cached and overhead is minimized.
 
-```cpp
-// Define "Point_" class  as a wrapper for Java "android.graphics.Point" class.
-// "Point" is defined as an alias for Point_*.
-UC_JNI_DEFINE_JCLASS(Point, android/graphics/Point)
-{
-    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(int, int)             // Point(int, int)
-    UC_JNI_DEFINE_JCLASS_FIELD(int, x)                     // Point#x
-    UC_JNI_DEFINE_JCLASS_FIELD(int, y)                     // Point#y
-    UC_JNI_DEFINE_JCLASS_METHOD(void, offset, int, int)    // void Point#offset(int, int)
-};
+```java
+package com.example.uc.ucjnitest;
+import java.util.Objects;
 
-extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample)(JNIEnv *env, jobject thiz)
+public class Point {
+    public static final Point ZERO = new Point(0, 0);
+
+    public static Point add(Point a, Point b)
+    {
+        return new Point(a.x + b.x, a.y + b.y);
+    }
+
+    private double x, y;
+
+    Point(double x, double y)
+    {
+        this.x = x;
+        this.y = y;
+    }
+    Point(Point p)
+    {
+        this.x = p.x;
+        this.y = p.y;
+    }
+    double norm()
+    {
+        return Math.sqrt(x * x + y * y);
+    }
+    void multiply(double v)
+    {
+        x *= v;
+        y *= v;
+    }
+
+    @Override public String toString() {...} 
+    @Override public int hashCode() {...}
+    @Override public boolean equals(Object o) {...}
+}
+```
+For the above Java code, in C ++, write as follows.
+
+```cpp
+// Define "jPoint_" class  as a wrapper for Java "com/example/uc/ucjnitest/Point" class.
+// "jPoint" is defined as an alias for jPoint_*.
+UC_JNI_DEFINE_JCLASS(jPoint, com/example/uc/ucjnitest/Point)
 {
+    UC_JNI_DEFINE_JCLASS_STATIC_FINAL_FIELD(jPoint, ZERO)
+    UC_JNI_DEFINE_JCLASS_STATIC_METHOD(jPoint, add, jPoint, jPoint)
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(double, double)
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(jPoint)
+    UC_JNI_DEFINE_JCLASS_FIELD(double, x)
+    UC_JNI_DEFINE_JCLASS_FIELD(double, y)
+    UC_JNI_DEFINE_JCLASS_METHOD(double, norm)
+    UC_JNI_DEFINE_JCLASS_METHOD(void, multiply, double)
+};
+```
+
+It is not necessary to write everything.
+As a result, the C ++ wrapper class `jPoint` of the` com.example.uc.ucjnitest.Point` class was defined.
+This can be used as follows.
+
+```cpp
+    // If a C++ exception occurs in this, it replaces it with java.lang.Throwable.
     uc::jni::exception_guard([&] {
 
-        auto p0 = Point_::new_(12, 34);       // p0 = new Point(12, 34);
-        auto p1 = Point_::new_(12, 34);       // p1 = new Point(12, 34);
-        auto p2 = Point_::new_(123, 456);     // p2 = new Point(123, 456);
+        // Constructor Method
+        // p0,p1,p2 are smart pointer. release automatically.
+        auto p0 = jPoint_::new_(3, 4);       // p0 = new Point(12, 34);
+        auto p1 = jPoint_::new_(p0);         // p1 = new Point(p0);
 
-        // you can use java.lang.Object method.
-        LOGD << p0->toString();               // p0.toString()
+        // get field
+        TEST_ASSERT_EQUALS(p1->x(), 3);       // p1.x == 3
+        TEST_ASSERT_EQUALS(p1->y(), 4);       // p1.y == 4
 
-        TEST_ASSERT_EQUALS(p0->x(), 12);      // p0.x == 12
-        TEST_ASSERT_EQUALS(p0->y(), 34);      // p0.y == 34
+        // call method
+        TEST_ASSERT_EQUALS(p1->norm(), 5);    // p1.norm() == 5
 
+        // java.lang.Object methods are already defined.
         TEST_ASSERT(p0->equals(p1));          // p0.equals(p1)
-        TEST_ASSERT(!p1->equals(p2));         // !p1.equals(p2)
 
-        p1->x(123);                           // p1.x = 123;
-        p1->y(456);                           // p1.y = 456;
-
+        // set field
+        p1->x(30);                           // p1.x = 30;
+        p1->y(40);                           // p1.y = 40;
         TEST_ASSERT(!p0->equals(p1));         // !p0.equals(p1)
-        TEST_ASSERT(p1->equals(p2));          // p1.equals(p2)
 
-        p0->offset(100, 200);                 // p0.offset(100, 200);
-        TEST_ASSERT_EQUALS(p0->x(), 112);     // p0.x == 112
-        TEST_ASSERT_EQUALS(p0->y(), 234);     // p0.y == 234
+        // get static final field
+        TEST_ASSERT_EQUALS(jPoint_::ZERO()->x(), 0);
+        TEST_ASSERT_EQUALS(jPoint_::ZERO()->y(), 0);
 
+        // call static method
+        auto p2 = jPoint_::add(p0, p1);
+        TEST_ASSERT_EQUALS(p2->x(), 60);
+        TEST_ASSERT_EQUALS(p2->y(), 80);
+
+        // Object.toString() returns std::string.
         LOGD << p0->toString() << ", " << p1->toString() << ", " << p2->toString();
     });
-}
 ```
 
 # Detail
+
+In addition to the method / field API as in the above sample, various JNI functions such as array operations and string operations are wrapped and provided.
 
 ## JNIEnv
 
@@ -180,34 +179,35 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 `uc::jni::local_ref<T>` is an alias for `std::unique_ptr<T,>`.
 
 `DeleteLocalRef()` is called automatically.
+*uc-jni* functions normally returns a "JNI object" in this form.
+
 
 ```cpp
-    // local_ref<jclass>
-    auto clazz = jni::make_local(env->GetObjectClass(thiz));
-
-    uc::jni::local_ref<jclass> superClazz { env->GetSuperclass(clazz.get()) };
-
-    // The following meanings are the same.
-    // auto superClazz = uc::jni::get_super_class(clazz);
+    // clazz, superClazz will be released automatically. 
+    auto clazz = uc::jni::get_object_class(thiz);
+    auto superClazz = uc::jni::get_super_class(clazz);
 ```
+
+Also, using the helper function `uc::jni::make_local()` explicitly calls `NewLocalRef()` to create a local reference.
+
 
 ### Global References
 
 `global_ref<T>` is similar to `std::shared_ptr<T>`.
 
-`DeleteGlobalRef()` is called automatically.
+A global reference is created by `NewGlobalRef()` at the time of assignment, and `DeleteGlobalRef()` is called when the reference count reaches 0.
+
+`uc::jni::make_global()` is provided as a helper function.
+
 
 ```cpp
     // global_ref<jclass>
-    auto clazz = jni::make_global(env->GetObjectClass(thiz));
-
-    // Assignment is also safe.
-    uc::jni::global_ref<jclass> superClazz{};
-    superClazz = env->GetSuperclass(clazz.get());
+    auto clazz = uc::jni::make_global(uc::jni::get_object_class(thiz));
 
     // It is also possible to substitute local_ref. 
     // Ownership does not shift and a new Global Reference can be created.
-    superClazz = uc::jni::get_super_class(clazz);
+    uc::jni::global_ref<jclass> superClazz = uc::jni::get_super_class(clazz);
+    superClazz =  env->GetSuperclass(clazz.get());
 ```
 
 ### Weak References
@@ -229,16 +229,20 @@ extern "C" JNIEXPORT void JNICALL Java_com_example_uc_ucjnitest_UcJniTest_Sample
 
 ## Resolve Classes
 
-
-It is not bad.
+There is also a wrapper function of `FindClass()`, but you should not normally use this if you use *uc-jni*.
 
 ```cpp
+    // I do not recommend
     auto cls = uc::jni::find_class("java/lang/RuntimeException");
 ```
 
-The following method is recommended because it provides very fast cache access.
+`uc::jni::get_class()` allocates the cache very efficiently.
+
+Provide very fast access with minimal cost.
+
 ```cpp
-    DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
+    // You need to define wrapper classes in macros in advance.
+    UC_JNI_DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
 
     // jclass instance is cached. Must not release it.
     jclass cls = uc::jni::get_class<RuntimeException>();
@@ -261,9 +265,9 @@ The following method is recommended because it provides very fast cache access.
 
 - Do your FindClass lookups once, in JNI_OnLoad, and cache the class references for later use. 
     ```cpp
-    DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
-    DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
-    DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
+    UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
+    UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
+    UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
         :
 
     jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
@@ -285,9 +289,9 @@ The following method is recommended because it provides very fast cache access.
 - Cache a reference to the ClassLoader object somewhere handy, and issue loadClass calls directly. 
 
     ```cpp
-    DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
-    DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
-    DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
+    UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass1, com/example/YourOwnClass1);
+    UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass2, com/example/YourOwnClass2);
+    UC_JNI_DEFINE_JCLASS_ALIAS(YourOwnClass3, com/example/YourOwnClass3);
 
     jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
     {
@@ -341,12 +345,12 @@ jstring returnString(JNIEnv* env, jobject obj, jstring str)
 You have been freed from tedious ["type signatures"](https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/types.html#type_signatures).
 
 ```cpp
-    DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+    UC_JNI_DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
     jfieldID fieldId = uc::jni::get_field_id<Point, int>("x");
 
 
-    DEFINE_JCLASS_ALIAS(System, java/lang/System);
+    UC_JNI_DEFINE_JCLASS_ALIAS(System, java/lang/System);
 
     jmethodID methodId = uc::jni::get_static_method_id<System, void()>("gc");
 ```
@@ -354,12 +358,18 @@ You have been freed from tedious ["type signatures"](https://docs.oracle.com/jav
 The following "function object" which is more convenient is recommended.
 
 ```cpp
-DEFINE_JCLASS_ALIAS(System, java/lang/System);
-DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
+UC_JNI_DEFINE_JCLASS_ALIAS(System, java/lang/System);
+UC_JNI_DEFINE_JCLASS_ALIAS(Point, android/graphics/Point);
 
 void func(Point point)
 {
-    auto x = uc::jni::make_field<Point, int>("x");  // Point.x
+    // Point#Point(int, int)
+    auto newPoint = uc::jni::make_constructor<Point(int,int)>();
+
+    auto point = newPoint(10, 20);
+
+    // Point#x
+    auto x = uc::jni::make_field<Point, int>("x");
 
     // valueX = point.x;
     int valueX = x.get(point);
@@ -389,7 +399,7 @@ Other examples.
     auto toString2 = jni::make_method<jobject, std::string()>("toString"); // Convert to std::string and return it.
 
 
-    DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
+    UC_JNI_DEFINE_JCLASS_ALIAS(UcJniTest, com/example/uc/ucjnitest/UcJniTest);
 
     // String[] UcJniTest.getFieldStringArray()
     auto getFieldStringArray = uc::jni::make_method<UcJniTest, uc::jni::array<jstring>()>("getFieldStringArray");
@@ -461,8 +471,8 @@ Other examples.
 
 ```
 
-
 The following are read only access.
+
 ```cpp
     // ReleaseArrayElements( mode = JNI_ABORT ) is called automatically.
     auto elems = uc::jni::get_const_elements(array);
@@ -491,7 +501,6 @@ The following are read only access.
     TEST_ASSERT_EQUALS("Hello", uc::jni::to_string(uc::jni::get(array, 0)));
     TEST_ASSERT_EQUALS("World", uc::jni::to_string(uc::jni::get(array, 1)));
 ```
-
 
 
 Use `uc::jni::array<T>` instead of `jobjectArray`.

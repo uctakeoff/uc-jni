@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.4.3"
-#define UC_JNI_VERSION_NUM 0x010403
+#define UC_JNI_VERSION "1.4.4"
+#define UC_JNI_VERSION_NUM 0x010404
 
 #include <jni.h>
 #include <memory>
@@ -48,9 +48,6 @@ template<> struct is_primitive_array_type<jlongArray> : std::true_type {};
 template<> struct is_primitive_array_type<jfloatArray> : std::true_type {};
 template<> struct is_primitive_array_type<jdoubleArray> : std::true_type {};
 
-// uc-jni exception
-class vm_exception : public std::exception {};
-
 //*************************************************************************************************
 // JavaVM
 //*************************************************************************************************
@@ -83,6 +80,15 @@ inline JNIEnv* env() noexcept
     return instance.env;
 }
 
+//*************************************************************************************************
+// C++ Exception
+//*************************************************************************************************
+
+class vm_exception : public std::exception {};
+inline void exception_check()
+{
+    if (env()->ExceptionCheck()) throw vm_exception();
+}
 
 //*************************************************************************************************
 // Global and Local References
@@ -250,7 +256,7 @@ private:
 
 
 //*************************************************************************************************
-// Resolve Classes
+// Class and Object Operations
 //*************************************************************************************************
 
 template <typename T> constexpr decltype(auto) fqcn() noexcept
@@ -267,8 +273,28 @@ DEFINE_FQCN(jthrowable, java/lang/Throwable)
 inline local_ref<jclass> find_class_native(const char* fqcn)
 {
     auto o = env()->FindClass(fqcn);
-    if (env()->ExceptionCheck()) throw vm_exception();
+    exception_check();
     return local_ref<jclass>{o};
+}
+template <typename JClass> local_ref<jclass> get_super_class(const JClass& clazz) noexcept
+{
+    return local_ref<jclass>{ env()->GetSuperclass(to_native_ref(clazz)) };
+}
+template <typename JClass1, typename JClass2> bool is_assignable_from(const JClass1& clazz1, const JClass2& clazz2) noexcept
+{
+    return env()->IsAssignableFrom(to_native_ref(clazz1), to_native_ref(clazz2)) == JNI_TRUE;
+}
+template <typename JType> local_ref<jclass> get_object_class(const JType& jobj) noexcept
+{
+    return local_ref<jclass>{ env()->GetObjectClass(to_native_ref(jobj)) };
+}
+template <typename JType, typename JClass> bool is_instance_of(const JType& jobj, const JClass& clazz) noexcept
+{
+    return env()->IsInstanceOf(to_native_ref(jobj), to_native_ref(clazz)) == JNI_TRUE;
+}
+template <typename JType1, typename JType2> bool is_same_object(const JType1& ref1, const JType2& ref2) noexcept
+{
+    return env()->IsSameObject(to_native_ref(ref1), to_native_ref(ref2)) == JNI_TRUE;
 }
 
 /*
@@ -281,7 +307,7 @@ namespace internal {
     inline std::function<local_ref<jclass>(const char*)> get_class_loader_find_class_method(const local_ref<jclass>& cls)
     {
         auto e = env();
-        auto getClassLoader = e->GetMethodID(local_ref<jclass>{e->GetObjectClass(cls.get())}.get(), "getClassLoader", "()Ljava/lang/ClassLoader;");
+        auto getClassLoader = e->GetMethodID(get_object_class(cls).get(), "getClassLoader", "()Ljava/lang/ClassLoader;");
         auto classLoader = make_global(e->CallObjectMethod(cls.get(), getClassLoader));
         auto findClass = e->GetMethodID(find_class_native("java/lang/ClassLoader").get(), "findClass", "(Ljava/lang/String;)Ljava/lang/Class;");
         return [classLoader = std::move(classLoader), findClass](const char* fqcn) {
@@ -316,13 +342,19 @@ template<typename JType> jclass get_class()
     return instance.get();
 }
 
-
-#define DEFINE_JCLASS_ALIAS(className, fullyQualifiedClassName) \
-struct className##_impl : public std::remove_pointer_t<jobject> \
-{\
-    static constexpr decltype(auto) fqcn() noexcept {return #fullyQualifiedClassName;}\
-};\
-using className = className##_impl*
+// get_class version
+template <typename JType> local_ref<jclass> get_super_class()
+{
+    return get_super_class(get_class<JType>());
+}
+template <typename JType1, typename JType2> bool is_assignable_from()
+{
+    return is_assignable_from(get_class<JType1>(), get_class<JType2>());
+}
+template <typename JType, typename T> bool is_instance_of(const T& jobj)
+{
+    return is_instance_of(jobj, get_class<JType>());
+}
 
 
 //*************************************************************************************************
@@ -478,78 +510,6 @@ template <> struct type_traits<jobjectArray>
     static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(type_traits<jobject>::signature()); }
 };
 
-
-//*************************************************************************************************
-// Class and Object Operations
-//*************************************************************************************************
-
-template <typename JClass> local_ref<jclass> get_super_class(const JClass& clazz) noexcept
-{
-    return local_ref<jclass>{ env()->GetSuperclass(to_native_ref(clazz)) };
-}
-template <typename JType> local_ref<jclass> get_super_class()
-{
-    return get_super_class(get_class<JType>());
-}
-template <typename JClass1, typename JClass2> bool is_assignable_from(const JClass1& clazz1, const JClass2& clazz2) noexcept
-{
-    return env()->IsAssignableFrom(to_native_ref(clazz1), to_native_ref(clazz2)) == JNI_TRUE;
-}
-template <typename JType1, typename JType2> bool is_assignable_from()
-{
-    return is_assignable_from(get_class<JType1>(), get_class<JType2>());
-}
-template <typename JType> local_ref<jclass> get_object_class(const JType& jobj) noexcept
-{
-    return local_ref<jclass>{ env()->GetObjectClass(to_native_ref(jobj)) };
-}
-template <typename JType, typename JClass> bool is_instance_of(const JType& jobj, const JClass& clazz) noexcept
-{
-    return env()->IsInstanceOf(to_native_ref(jobj), to_native_ref(clazz)) == JNI_TRUE;
-}
-template <typename JType, typename T> bool is_instance_of(const T& jobj)
-{
-    return is_instance_of(jobj, get_class<JType>());
-}
-template <typename JType1, typename JType2> bool is_same_object(const JType1& ref1, const JType2& ref2) noexcept
-{
-    return env()->IsSameObject(to_native_ref(ref1), to_native_ref(ref2)) == JNI_TRUE;
-}
-
-//*************************************************************************************************
-// Exceptions
-//*************************************************************************************************
-
-inline void exception_check()
-{
-    if (env()->ExceptionCheck()) throw vm_exception();
-}
-template <typename JThrowable> void throw_new(const char* what)
-{
-    env()->ThrowNew(get_class<JThrowable>(), what);
-}
-
-template <class F, class... Args> decltype(auto) exception_guard(F&& func, Args&&... args) noexcept
-{
-    DEFINE_JCLASS_ALIAS(Error, java/lang/Error);
-    DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
-    DEFINE_JCLASS_ALIAS(OutOfMemoryError, java/lang/OutOfMemoryError);
-    try {
-        return func(std::forward<Args>(args)...);
-    } catch (vm_exception&) {
-        // java exception has already thrown
-    } catch (std::runtime_error& e) {
-        throw_new<RuntimeException>(e.what());
-    } catch (std::bad_alloc& e) {
-        throw_new<OutOfMemoryError>(e.what());
-    } catch (std::exception& e) {
-        throw_new<Error>(e.what());
-    } catch (...) {
-        throw_new<Error>("Un unidentified C++ exception was thrown");
-    }
-    env()->ExceptionDescribe();
-    return decltype(func(std::forward<Args>(args)...))();
-}
 
 
 //*************************************************************************************************
@@ -1243,7 +1203,7 @@ template <typename JType, size_t N> bool register_natives(const JNINativeMethod 
 //*************************************************************************************************
 // NIO Support (Beta)
 //*************************************************************************************************
-// DEFINE_JCLASS_ALIAS(DirectByteBuffer, java/nio/DirectByteBuffer);
+// UC_JNI_DEFINE_JCLASS_ALIAS(DirectByteBuffer, java/nio/DirectByteBuffer);
 
 inline local_ref<jobject> new_direct_byte_buffer(void* address, jlong capacity) noexcept
 {
@@ -1288,6 +1248,14 @@ namespace internal
 {
     template<typename ...Args> using native_arguments_type = std::tuple<typename type_traits<std::decay_t<Args>>::jvalue_type...>;
 }
+
+// define type only.
+#define UC_JNI_DEFINE_JCLASS_ALIAS(className, fullyQualifiedClassName) \
+    struct className ## _ : public std::remove_pointer_t<uc::jni::object> \
+    {\
+        static constexpr decltype(auto) fqcn() noexcept {return #fullyQualifiedClassName;}\
+    };\
+    using className = className ## _*
 
 //! start wrapper class definition.
 #define UC_JNI_DEFINE_JCLASS(className, fullyQualifiedClassName) UC_JNI_DEFINE_JCLASS_DERIVED(className, fullyQualifiedClassName, uc::jni::object)
@@ -1352,6 +1320,14 @@ namespace internal
     decltype(auto) fieldName() { return fieldName ## _accessor().get(this); }\
     decltype(auto) fieldName(const valueType& val) { fieldName ## _accessor().set(this, val); return *this; }
 
+//! define final field accessor.
+#define UC_JNI_DEFINE_JCLASS_FINAL_FIELD(valueType, fieldName) \
+    public:\
+    decltype(auto) fieldName()\
+    {\
+        static const auto fieldValue = make_global_or_primitive(uc::jni::make_field<this_type, valueType>(#fieldName).get(this));\
+        return fieldValue;\
+    }\
 
 //! define constructor method.  instead of this, call new_() function.
 #define UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(...) \
@@ -1399,7 +1375,7 @@ namespace internal
     static void fieldName(const valueType& val) { fieldName ## _accessor().set(val); }
 
 //! define static final field accessor.
-#define UC_JNI_DEFINE_JCLASS_FINAL_STATIC_FIELD(valueType, fieldName) \
+#define UC_JNI_DEFINE_JCLASS_STATIC_FINAL_FIELD(valueType, fieldName) \
     public:\
     static decltype(auto) fieldName()\
     {\
@@ -1422,6 +1398,38 @@ UC_JNI_DEFINE_JCLASS_DERIVED(object, java/lang/Object, jobject)
     UC_JNI_DEFINE_JCLASS_OVERLOADED_METHOD(void, wait, jlong)
     UC_JNI_DEFINE_JCLASS_OVERLOADED_METHOD(void, wait, jlong, jint)
 };
+
+
+//*************************************************************************************************
+// Exceptions
+//*************************************************************************************************
+
+template <typename JThrowable> void throw_new(const char* what)
+{
+    env()->ThrowNew(get_class<JThrowable>(), what);
+}
+
+template <class F, class... Args> decltype(auto) exception_guard(F&& func, Args&&... args) noexcept
+{
+    UC_JNI_DEFINE_JCLASS_ALIAS(Error, java/lang/Error);
+    UC_JNI_DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
+    UC_JNI_DEFINE_JCLASS_ALIAS(OutOfMemoryError, java/lang/OutOfMemoryError);
+    try {
+        return func(std::forward<Args>(args)...);
+    } catch (vm_exception&) {
+        // java exception has already thrown
+    } catch (std::runtime_error& e) {
+        throw_new<RuntimeException>(e.what());
+    } catch (std::bad_alloc& e) {
+        throw_new<OutOfMemoryError>(e.what());
+    } catch (std::exception& e) {
+        throw_new<Error>(e.what());
+    } catch (...) {
+        throw_new<Error>("Un unidentified C++ exception was thrown");
+    }
+    env()->ExceptionDescribe();
+    return decltype(func(std::forward<Args>(args)...))();
+}
 
 }
 }

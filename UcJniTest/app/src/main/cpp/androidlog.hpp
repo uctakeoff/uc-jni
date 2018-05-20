@@ -22,7 +22,7 @@ namespace android {
     template <android_LogPriority Priority> class log_stream
     {
     public:
-        log_stream(const char* tags) : tags_(tags)
+        explicit log_stream(const char* tags) : tags_(tags)
         {
         }
         ~log_stream()
@@ -42,7 +42,7 @@ namespace android {
     class null_stream
     {
     public:
-        null_stream(const char*){}
+        explicit null_stream(const char*){}
         template<typename T> null_stream& operator<<(T const&) { return *this; }
     };
 
