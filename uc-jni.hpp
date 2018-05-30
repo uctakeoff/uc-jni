@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.4.4"
-#define UC_JNI_VERSION_NUM 0x010404
+#define UC_JNI_VERSION "1.4.5"
+#define UC_JNI_VERSION_NUM 0x010405
 
 #include <jni.h>
 #include <memory>
@@ -1325,7 +1325,7 @@ namespace internal
     public:\
     decltype(auto) fieldName()\
     {\
-        static const auto fieldValue = make_global_or_primitive(uc::jni::make_field<this_type, valueType>(#fieldName).get(this));\
+        static const auto fieldValue = uc::jni::make_global_or_primitive(uc::jni::make_field<this_type, valueType>(#fieldName).get(this));\
         return fieldValue;\
     }\
 
@@ -1379,7 +1379,7 @@ namespace internal
     public:\
     static decltype(auto) fieldName()\
     {\
-        static const auto fieldValue = make_global_or_primitive(uc::jni::make_static_field<this_type, valueType>(#fieldName).get());\
+        static const auto fieldValue = uc::jni::make_global_or_primitive(uc::jni::make_static_field<this_type, valueType>(#fieldName).get());\
         return fieldValue;\
     }
 
