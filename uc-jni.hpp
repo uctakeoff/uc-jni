@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.4.5"
-#define UC_JNI_VERSION_NUM 0x010405
+#define UC_JNI_VERSION "1.4.6"
+#define UC_JNI_VERSION_NUM 0x010406
 
 #include <jni.h>
 #include <memory>
@@ -84,11 +84,7 @@ inline JNIEnv* env() noexcept
 // C++ Exception
 //*************************************************************************************************
 
-class vm_exception : public std::exception {};
-inline void exception_check()
-{
-    if (env()->ExceptionCheck()) throw vm_exception();
-}
+void exception_check();
 
 //*************************************************************************************************
 // Global and Local References
@@ -940,12 +936,17 @@ std::vector<T> to_vector(const JArray& array)
 
 
 template <typename T, std::enable_if_t<is_primitive_type<T>::value, std::nullptr_t> = nullptr> 
+local_ref<native_array_t<T>> to_jarray(const T* data, size_t dataCount)
+{
+    const auto len = static_cast<jsize>(dataCount);
+    auto ret = new_array<T>(len);
+    set_region(ret, 0, len, data);
+    return ret;
+}
+template <typename T, std::enable_if_t<is_primitive_type<T>::value, std::nullptr_t> = nullptr> 
 local_ref<native_array_t<T>> to_jarray(const std::vector<T>& vec)
 {
-    const auto len = static_cast<jsize>(vec.size());
-    auto ret = new_array<T>(len);
-    set_region(ret, 0, len, vec.data());
-    return ret;
+    return to_jarray(vec.data(), vec.size());
 }
 template <typename T, std::enable_if_t<std::is_same<T, bool>::value, std::nullptr_t> = nullptr> 
 local_ref<jbooleanArray> to_jarray(const std::vector<T>& vec)
@@ -1403,7 +1404,35 @@ UC_JNI_DEFINE_JCLASS_DERIVED(object, java/lang/Object, jobject)
 //*************************************************************************************************
 // Exceptions
 //*************************************************************************************************
+class vm_exception : public std::exception
+{
+public:
+    template<typename JThrowable> explicit vm_exception(JThrowable& jobj) : throwable(jobj)
+    {
+        static auto getMessage = uc::jni::make_method<jthrowable, std::string()>("getMessage");
+        message = getMessage(throwable);
+    }
+    const char* what() const noexcept
+    {
+        return message.c_str();
+    }
+    const global_ref<jthrowable> throwable;
+private:
+    std::string message;
+};
 
+inline local_ref<jthrowable> exception_occurred() noexcept
+{
+    return local_ref<jthrowable>(env()->ExceptionOccurred());
+}
+inline void exception_check()
+{
+    if (env()->ExceptionCheck()) {
+        auto t = exception_occurred();
+        env()->ExceptionClear();
+        throw vm_exception(t);
+    }
+}
 template <typename JThrowable> void throw_new(const char* what)
 {
     env()->ThrowNew(get_class<JThrowable>(), what);
@@ -1416,8 +1445,8 @@ template <class F, class... Args> decltype(auto) exception_guard(F&& func, Args&
     UC_JNI_DEFINE_JCLASS_ALIAS(OutOfMemoryError, java/lang/OutOfMemoryError);
     try {
         return func(std::forward<Args>(args)...);
-    } catch (vm_exception&) {
-        // java exception has already thrown
+    } catch (vm_exception& e) {
+        env()->Throw(e.throwable.get());
     } catch (std::runtime_error& e) {
         throw_new<RuntimeException>(e.what());
     } catch (std::bad_alloc& e) {
