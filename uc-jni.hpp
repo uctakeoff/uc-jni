@@ -16,6 +16,7 @@ http://opensource.org/licenses/mit-license.php
 #include <type_traits>
 #include <vector>
 #include <algorithm>
+#include <initializer_list>
 
 namespace uc {
 namespace jni {
@@ -1198,6 +1199,10 @@ template <typename JType> bool register_natives(const JNINativeMethod* methods, 
 template <typename JType, size_t N> bool register_natives(const JNINativeMethod (&methods)[N])
 {
     return register_natives<JType>(methods, N);
+}
+template <typename JType> bool register_natives(std::initializer_list<JNINativeMethod> methods)
+{
+    return register_natives<JType>(methods.begin(), methods.size());
 }
 
 
