@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.4.6"
-#define UC_JNI_VERSION_NUM 0x010406
+#define UC_JNI_VERSION "1.4.7"
+#define UC_JNI_VERSION_NUM 0x010407
 
 #include <jni.h>
 #include <memory>
@@ -213,12 +213,12 @@ public:
     weak_ref& operator=(const weak_ref&) = default;
     ~weak_ref() = default;
 
-    template <typename T> explicit weak_ref(const T& obj) : impl(make_weak(obj))
+    template <typename T> explicit weak_ref(const T& obj) : impl(make_impl(obj))
     {
     }
     template <typename T> weak_ref& operator=(const T& obj)
     {
-        impl = make_weak(obj);
+        impl = make_impl(obj);
         return *this;
     }
     void reset() noexcept
@@ -244,12 +244,16 @@ public:
 
 private:
     template <typename T, std::enable_if_t<std::is_same<native_ref<T>, JType>::value, std::nullptr_t> = nullptr>
-    static impl_type make_weak(const T& obj)
+    static impl_type make_impl(const T& obj)
     {
         return impl_type(env()->NewWeakGlobalRef(to_native_ref(obj)), [](jweak p) { env()->DeleteWeakGlobalRef(p); });
     }
     impl_type impl;
 };
+template <typename JType> weak_ref<native_ref<JType>> make_weak(const JType& obj)
+{
+    return weak_ref<native_ref<JType>>(obj);
+}
 
 
 //*************************************************************************************************
@@ -420,18 +424,18 @@ template <typename... Ts> struct type_traits;
 
 template <> struct type_traits<>
 {
-    static constexpr decltype(auto) signature() noexcept { return make_cexprstr(""); }
+    static constexpr auto signature() noexcept { return make_cexprstr(""); }
 };
 template<typename R, typename... Args> struct type_traits<R(Args...)>
 {
-    static constexpr decltype(auto) signature() noexcept
+    static constexpr auto signature() noexcept
     {
         return make_cexprstr("(").append(type_traits<Args...>::signature()).append(")").append(type_traits<R>::signature());
     }
 };
 template <typename T1, typename T2, typename... Ts> struct type_traits<T1, T2, Ts...>
 {
-    static constexpr decltype(auto) signature() noexcept
+    static constexpr auto signature() noexcept
     {
         return type_traits<T1>::signature().append(type_traits<T2>::signature()).append(type_traits<Ts...>::signature());
     }
@@ -443,7 +447,7 @@ template<> struct type_traits<ctype>\
     using jvalue_type = jtype;\
     static constexpr ctype c_cast(jtype v) noexcept { return static_cast<ctype>(v); }\
     static constexpr jtype j_cast(ctype v) noexcept { return static_cast<jtype>(v); }\
-    static constexpr decltype(auto) signature() noexcept { return make_cexprstr(#sign); }\
+    static constexpr auto signature() noexcept { return make_cexprstr(#sign); }\
 }
 #define DEFINE_TYPE_TRAITS_A(type, sign) \
 DEFINE_TYPE_TRAITS(type, type, sign);\
@@ -452,7 +456,7 @@ template<> struct type_traits<type ## Array>\
     using jvalue_type = type ## Array;\
     static constexpr jvalue_type c_cast(jvalue_type v) noexcept { return v; }\
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }\
-    static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(#sign); }\
+    static constexpr auto signature() noexcept { return make_cexprstr("[").append(#sign); }\
 }
 DEFINE_TYPE_TRAITS_A(jboolean, Z);
 DEFINE_TYPE_TRAITS_A(jbyte,    B);
@@ -469,42 +473,42 @@ DEFINE_TYPE_TRAITS(char16_t, jchar, C);
 template<> struct type_traits<void>
 {
     using jvalue_type = void;
-    static constexpr decltype(auto) signature() noexcept { return make_cexprstr("V"); }
+    static constexpr auto signature() noexcept { return make_cexprstr("V"); }
 };
 template<> struct type_traits<bool>
 {
     using jvalue_type = jboolean;
     static constexpr bool c_cast(jboolean v) noexcept { return v == JNI_TRUE; }
     static constexpr jboolean j_cast(bool v) noexcept { return v ? JNI_TRUE : JNI_FALSE; }
-    static constexpr decltype(auto) signature() noexcept { return type_traits<jvalue_type>::signature(); }
+    static constexpr auto signature() noexcept { return type_traits<jvalue_type>::signature(); }
 };
 template <typename T> struct type_traits<T*>
 {
     using jvalue_type = T*;
     static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
-    static constexpr decltype(auto) signature() noexcept { return make_cexprstr("L").append(fqcn<T*>()).append(";"); }
+    static constexpr auto signature() noexcept { return make_cexprstr("L").append(fqcn<T*>()).append(";"); }
 };
 template <typename T> struct type_traits<local_ref<T>>
 {
     using jvalue_type = T;
     static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
-    static constexpr decltype(auto) signature() noexcept { return make_cexprstr("L").append(fqcn<T>()).append(";"); }
+    static constexpr auto signature() noexcept { return make_cexprstr("L").append(fqcn<T>()).append(";"); }
 };
 template <typename T> struct type_traits<global_ref<T>>
 {
     using jvalue_type = T;
     static global_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_global(v); }
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
-    static constexpr decltype(auto) signature() noexcept { return make_cexprstr("L").append(fqcn<T>()).append(";"); }
+    static constexpr auto signature() noexcept { return make_cexprstr("L").append(fqcn<T>()).append(";"); }
 };
 template <> struct type_traits<jobjectArray>
 {
     using jvalue_type = jobjectArray;
     static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
-    static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(type_traits<jobject>::signature()); }
+    static constexpr auto signature() noexcept { return make_cexprstr("[").append(type_traits<jobject>::signature()); }
 };
 
 
@@ -542,7 +546,7 @@ template<> struct string_traits<char16_t>
     static void get_region(JNIEnv* e, jstring str, jsize start, jsize len, value_type* buf) noexcept { e->GetStringRegion(str, start, len, reinterpret_cast<jchar*>(buf)); }
 };
 
-template <typename T, typename Traits = string_traits<T>> decltype(auto) get_chars(jstring str, jboolean* isCopy = nullptr)
+template <typename T, typename Traits = string_traits<T>> auto get_chars(jstring str, jboolean* isCopy = nullptr)
 {
     auto deleter = [str](const T* p) { Traits::release_chars(env(), str, p); };
     return std::unique_ptr<const T, decltype(deleter)>(Traits::get_chars(env(), str, isCopy), std::move(deleter));
@@ -648,8 +652,8 @@ template<typename T> struct type_traits<std::basic_string<T>>
 {
     using jvalue_type = jstring;
     static std::basic_string<T> c_cast(jstring v) { return to_basic_string<T>(v); }
-    static decltype(auto) j_cast(const std::basic_string<T>& v) { return to_jstring(v); }
-    static constexpr decltype(auto) signature() noexcept { return type_traits<jvalue_type>::signature(); }
+    static auto j_cast(const std::basic_string<T>& v) { return to_jstring(v); }
+    static constexpr auto signature() noexcept { return type_traits<jvalue_type>::signature(); }
 };
 
 
@@ -732,9 +736,9 @@ template<typename T> using array = array_impl<T>*;
 template <typename T> struct type_traits<array<T>>
 {
     using jvalue_type = array<T>;
-    static decltype(auto) c_cast(jvalue_type v) noexcept { return make_local(v); }
+    static auto c_cast(jvalue_type v) noexcept { return make_local(v); }
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
-    static constexpr decltype(auto) signature() noexcept { return make_cexprstr("[").append(type_traits<T>::signature()); }
+    static constexpr auto signature() noexcept { return make_cexprstr("[").append(type_traits<T>::signature()); }
 };
 
 template <typename T> struct array_traits { using type = array<T>; };
@@ -860,7 +864,7 @@ local_ref<array<T>> new_array(jsize length)
     return local_ref<array<T>>{ static_cast<array<T>>(env()->NewObjectArray(length, get_class<T>(), nullptr)) };
 }
 template <typename JObjArray, std::enable_if_t<is_derived_from_jobject<native_array_element_t<JObjArray>>::value, std::nullptr_t> = nullptr> 
-decltype(auto) get(const JObjArray& array, jsize index) noexcept
+auto get(const JObjArray& array, jsize index) noexcept
 {
     using jvalue_type = native_array_element_t<JObjArray>;
     return local_ref<jvalue_type>{ static_cast<jvalue_type>(env()->GetObjectArrayElement(to_native_ref(array), index)) };
@@ -912,7 +916,7 @@ std::vector<T> to_vector(const JArray& array)
     return ret;
 }
 template <typename JArray, std::enable_if_t<is_primitive_array_type<native_ref<JArray>>::value, std::nullptr_t> = nullptr> 
-decltype(auto) to_vector(const JArray& array)
+auto to_vector(const JArray& array)
 {
     return to_vector<typename function_traits<native_ref<JArray>>::value_type>(array);
 }
@@ -974,8 +978,8 @@ template <typename T> struct type_traits<std::vector<T>>
 {
     using jvalue_type = native_array_t<T>;
     static std::vector<T> c_cast(jvalue_type v) { return to_vector<T>(v); }
-    static decltype(auto) j_cast(const std::vector<T>& v) { return to_jarray(v); }
-    static constexpr decltype(auto) signature() noexcept { return type_traits<jvalue_type>::signature(); }
+    static auto j_cast(const std::vector<T>& v) { return to_jarray(v); }
+    static constexpr auto signature() noexcept { return type_traits<jvalue_type>::signature(); }
 };
 
 
@@ -1012,7 +1016,7 @@ template<typename JType, typename T> jmethodID get_static_method_id(const char* 
 
 template<typename JType, typename T> struct field
 {
-    template<typename JObj> decltype(auto) get(const JObj& obj) const
+    template<typename JObj> auto get(const JObj& obj) const
     {
         return type_traits<T>::c_cast(function_traits<typename type_traits<T>::jvalue_type>::get_field(env(), jni::to_native_ref(obj), id));
     }
@@ -1033,7 +1037,7 @@ template <typename JType, typename T> field<JType, T> make_field(const char* nam
 
 template<typename JType, typename T> struct static_field
 {
-    decltype(auto) get() const
+    auto get() const
     {
         return type_traits<T>::c_cast(function_traits<typename type_traits<T>::jvalue_type>::get_static_field(env(), get_class<JType>(), id));
     }
@@ -1065,7 +1069,7 @@ template <typename JType, typename... Args> struct method<JType, void(Args...)>
 };
 template <typename JType, typename R, typename... Args> struct method<JType, R(Args...)> 
 {
-    template<typename JObj, typename... Ts> decltype(auto) operator()(const JObj& obj, const Ts&... args) const
+    template<typename JObj, typename... Ts> auto operator()(const JObj& obj, const Ts&... args) const
     {
         auto result = function_traits<typename type_traits<R>::jvalue_type>::call_method(env(), to_native_ref(obj), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -1093,7 +1097,7 @@ template <typename JType, typename... Args> struct non_virtual_method<JType, voi
 };
 template <typename JType, typename R, typename... Args> struct non_virtual_method<JType, R(Args...)> 
 {
-    template<typename JObj, typename... Ts> decltype(auto) operator()(const JObj& obj, const Ts&... args) const
+    template<typename JObj, typename... Ts> auto operator()(const JObj& obj, const Ts&... args) const
     {
         auto result = function_traits<typename type_traits<R>::jvalue_type>::call_non_virtual_method(env(), to_native_ref(obj), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -1124,7 +1128,7 @@ template <typename JType, typename... Args> struct static_method<JType, void(Arg
 };
 template <typename JType, typename R, typename... Args> struct static_method<JType, R(Args...)>
 {
-    template<typename... Ts> decltype(auto) operator()(const Ts&... args) const
+    template<typename... Ts> auto operator()(const Ts&... args) const
     {
         auto result = function_traits<typename type_traits<R>::jvalue_type>::call_static_method(env(), get_class<JType>(), id, type_traits<Args>::j_cast(args)...);
         exception_check();
@@ -1271,7 +1275,7 @@ namespace internal
     {\
         using this_type = Derived*;\
         static constexpr decltype(auto) fqcn() noexcept {return #fullyQualifiedClassName;}\
-        template<typename ...Args> static decltype(auto) new_(Args&&... args) { return Derived::construct(nullptr, std::forward<Args>(args)...); }\
+        template<typename ...Args> static auto new_(Args&&... args) { return Derived::construct(nullptr, std::forward<Args>(args)...); }\
     };\
     struct className ## _;\
     using className = className ## _*;\
@@ -1280,21 +1284,21 @@ namespace internal
 //! define class method and non virtual method.
 #define UC_JNI_DEFINE_JCLASS_METHOD(returnType, methodName, ...) \
     public:\
-    template<typename ...Args> decltype(auto) methodName(Args&&... args)\
+    template<typename ...Args> auto methodName(Args&&... args)\
     {\
         return methodName ## _(nullptr, std::forward<Args>(args)...);\
     }\
-    template<typename ...Args> decltype(auto) methodName ## NonVirtual(Args&&... args)\
+    template<typename ...Args> auto methodName ## NonVirtual(Args&&... args)\
     {\
         return methodName ## NonVirtual_(nullptr, std::forward<Args>(args)...);\
     }\
     private:\
-    template <typename ...Args> decltype(auto) methodName ## _(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
+    template <typename ...Args> auto methodName ## _(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
     {\
         static const auto method = uc::jni::make_method<this_type, returnType(__VA_ARGS__)>(#methodName);\
         return method(this, std::forward<Args>(args)...);\
     }\
-    template <typename ...Args> decltype(auto) methodName ## NonVirtual_(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
+    template <typename ...Args> auto methodName ## NonVirtual_(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
     {\
         static const auto method = uc::jni::make_non_virtual_method<this_type, returnType(__VA_ARGS__)>(#methodName);\
         return method(this, std::forward<Args>(args)...);\
@@ -1303,12 +1307,12 @@ namespace internal
 //! define overloaded method.
 #define UC_JNI_DEFINE_JCLASS_OVERLOADED_METHOD(returnType, methodName, ...) \
     private:\
-    template <typename ...Args> decltype(auto) methodName ## _(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
+    template <typename ...Args> auto methodName ## _(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
     {\
         static const auto method = uc::jni::make_method<this_type, returnType(__VA_ARGS__)>(#methodName);\
         return method(this, std::forward<Args>(args)...);\
     }\
-    template <typename ...Args> decltype(auto) methodName ## NonVirtual_(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
+    template <typename ...Args> auto methodName ## NonVirtual_(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
     {\
         static const auto method = uc::jni::make_non_virtual_method<this_type, returnType(__VA_ARGS__)>(#methodName);\
         return method(this, std::forward<Args>(args)...);\
@@ -1317,19 +1321,19 @@ namespace internal
 //! define field accessor.
 #define UC_JNI_DEFINE_JCLASS_FIELD(valueType, fieldName) \
     private:\
-    static decltype(auto) fieldName ## _accessor()\
+    static auto fieldName ## _accessor()\
     {\
         static const auto field = uc::jni::make_field<this_type, valueType>(#fieldName);\
         return field;\
     }\
     public:\
-    decltype(auto) fieldName() { return fieldName ## _accessor().get(this); }\
-    decltype(auto) fieldName(const valueType& val) { fieldName ## _accessor().set(this, val); return *this; }
+    auto fieldName() { return fieldName ## _accessor().get(this); }\
+    auto fieldName(const valueType& val) { fieldName ## _accessor().set(this, val); return *this; }
 
 //! define final field accessor.
 #define UC_JNI_DEFINE_JCLASS_FINAL_FIELD(valueType, fieldName) \
     public:\
-    decltype(auto) fieldName()\
+    auto fieldName()\
     {\
         static const auto fieldValue = uc::jni::make_global_or_primitive(uc::jni::make_field<this_type, valueType>(#fieldName).get(this));\
         return fieldValue;\
@@ -1338,7 +1342,7 @@ namespace internal
 //! define constructor method.  instead of this, call new_() function.
 #define UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(...) \
     public:\
-    template <typename ...Args> static decltype(auto) construct(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
+    template <typename ...Args> static auto construct(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
     {\
         static const auto ctor = uc::jni::make_constructor<this_type(__VA_ARGS__)>();\
         return ctor(std::forward<Args>(args)...);\
@@ -1347,12 +1351,12 @@ namespace internal
 //! define static method.
 #define UC_JNI_DEFINE_JCLASS_STATIC_METHOD(returnType, methodName, ...) \
     public:\
-    template<typename ...Args> static decltype(auto) methodName(Args&&... args)\
+    template<typename ...Args> static auto methodName(Args&&... args)\
     {\
         return methodName ## _(nullptr, std::forward<Args>(args)...);\
     }\
     private:\
-    template <typename ...Args> static decltype(auto) methodName ## _(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
+    template <typename ...Args> static auto methodName ## _(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
     {\
         static const auto method = uc::jni::make_static_method<this_type, returnType(__VA_ARGS__)>(#methodName);\
         return method(std::forward<Args>(args)...);\
@@ -1362,7 +1366,7 @@ namespace internal
 //! define overloaded static method.
 #define UC_JNI_DEFINE_JCLASS_OVERLOADED_STATIC_METHOD(returnType, methodName, ...) \
     private:\
-    template <typename ...Args> static decltype(auto) methodName ## _(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
+    template <typename ...Args> static auto methodName ## _(std::enable_if_t<std::is_constructible<uc::jni::internal::native_arguments_type<__VA_ARGS__>, uc::jni::internal::native_arguments_type<Args...>>::value, std::nullptr_t>, Args&&... args)\
     {\
         static const auto method = uc::jni::make_static_method<this_type, returnType(__VA_ARGS__)>(#methodName);\
         return method(std::forward<Args>(args)...);\
@@ -1371,19 +1375,19 @@ namespace internal
 //! define static field accessor.
 #define UC_JNI_DEFINE_JCLASS_STATIC_FIELD(valueType, fieldName) \
     private:\
-    static decltype(auto) fieldName ## _accessor()\
+    static auto fieldName ## _accessor()\
     {\
         static const auto field = uc::jni::make_static_field<this_type, valueType>(#fieldName);\
         return field;\
     }\
     public:\
-    static decltype(auto) fieldName() { return fieldName ## _accessor().get(); }\
+    static auto fieldName() { return fieldName ## _accessor().get(); }\
     static void fieldName(const valueType& val) { fieldName ## _accessor().set(val); }
 
 //! define static final field accessor.
 #define UC_JNI_DEFINE_JCLASS_STATIC_FINAL_FIELD(valueType, fieldName) \
     public:\
-    static decltype(auto) fieldName()\
+    static auto fieldName()\
     {\
         static const auto fieldValue = uc::jni::make_global_or_primitive(uc::jni::make_static_field<this_type, valueType>(#fieldName).get());\
         return fieldValue;\
@@ -1443,7 +1447,7 @@ template <typename JThrowable> void throw_new(const char* what)
     env()->ThrowNew(get_class<JThrowable>(), what);
 }
 
-template <class F, class... Args> decltype(auto) exception_guard(F&& func, Args&&... args) noexcept
+template <class F, class... Args> auto exception_guard(F&& func, Args&&... args) noexcept
 {
     UC_JNI_DEFINE_JCLASS_ALIAS(Error, java/lang/Error);
     UC_JNI_DEFINE_JCLASS_ALIAS(RuntimeException, java/lang/RuntimeException);
