@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.4.7"
-#define UC_JNI_VERSION_NUM 0x010407
+#define UC_JNI_VERSION "1.4.8"
+#define UC_JNI_VERSION_NUM 0x010408
 
 #include <jni.h>
 #include <memory>
@@ -1183,7 +1183,7 @@ template <typename JType> struct monitor_exit
 template <typename JType> using monitor = std::unique_ptr<std::remove_pointer_t<JType>, monitor_exit<JType>>;
 template <typename JType> monitor<native_ref<JType>> synchronized(const JType& obj)
 {
-    if (env()->MonitorEnter(to_native_ref(obj)) != 0) throw std::runtime_error("uc::jni::syncronized");
+    if (env()->MonitorEnter(to_native_ref(obj)) != 0) throw std::runtime_error("uc::jni::synchronized");
     return monitor<native_ref<JType>>(to_native_ref(obj));
 }
 
@@ -1193,7 +1193,7 @@ template <typename JType> monitor<native_ref<JType>> synchronized(const JType& o
 //*************************************************************************************************
 template<typename R, typename... Args> JNINativeMethod make_native_method(const char* name, R(*fnPtr)(JNIEnv*,jobject,Args...)) noexcept
 {
-    return JNINativeMethod { name, get_signature<R(Args...)>(), (void*)fnPtr };
+    return JNINativeMethod { name, get_signature<R(Args...)>(), reinterpret_cast<void*>(fnPtr) };
 }
 
 template <typename JType> bool register_natives(const JNINativeMethod* methods, jint nMethods)

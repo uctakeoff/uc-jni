@@ -1208,6 +1208,112 @@ jint plus(JNIEnv* env, jobject obj, jint i, jint j)
 {
     return i + j;
 }
+
+struct Point3
+{
+    void set(int x, int y, int z)
+    {
+        this->x = x;
+        this->y = y;
+        this->z = z;
+    }
+    void add(const Point3& o)
+    {
+        add(o.x, o.y, o.z);
+    }
+    void add(int x, int y, int z)
+    {
+        this->x += x;
+        this->y += y;
+        this->z += z;
+    }
+    int x, y, z;
+};
+
+template<typename T, typename R, typename... Args> struct MemberFun
+{
+    using type = R (T::*)(Args...);
+};
+UC_JNI_DEFINE_JCLASS(jPoint3, com/example/uc/ucjnitest/Point3)
+{
+    UC_JNI_DEFINE_JCLASS_CONSTRUCTOR(jlong)
+    UC_JNI_DEFINE_JCLASS_FIELD(jlong, native_ptr)
+};
+namespace uc {
+namespace jni {
+
+template <> struct type_traits<Point3>
+{
+    using jvalue_type = jPoint3;
+    static constexpr decltype(auto) signature() noexcept { return make_cexprstr("L").append(fqcn<jPoint3>()).append(";"); }
+
+    static Point3& c_cast(jPoint3 thiz) noexcept
+    {
+        return *reinterpret_cast<Point3*>(thiz->native_ptr());
+    }
+    static Point3& c_cast(jobject thiz) noexcept
+    {
+        return c_cast(static_cast<jPoint3>(thiz));
+    }
+
+#define UC_JNI_DEFINE_MEM_FUN_ACCESSOR(memFun) \
+    template<typename... Args> static decltype(auto) call_ ## memFun(JNIEnv* env, jobject thiz, typename uc::jni::type_traits<Args>::jvalue_type... args)\
+    {\
+        using ret_type = decltype(type_traits<Point3>::c_cast(thiz).memFun(uc::jni::type_traits<Args>::c_cast(args)...));\
+        return uc::jni::exception_guard([&]{ return type_traits<Point3>::c_cast(thiz).memFun(uc::jni::type_traits<Args>::c_cast(args)...); });\
+    }\
+    template<typename... Args> static JNINativeMethod memFun()\
+    {\
+        return uc::jni::make_native_method(#memFun, &type_traits<Point3>::call_ ## memFun<Args...>);\
+    }
+
+// #define UC_JNI_DEFINE_MEM_FUN_ACCESSOR(memFun) \
+//     template<typename... Args> static void call_ ## memFun(JNIEnv* env, jobject thiz, typename type_traits<Args>::jvalue_type... args)\
+//     {\
+//         return  type_traits<Point3>::c_cast(thiz).memFun(type_traits<Args>::c_cast(args)...);\
+//     }
+#define UC_JNI_DEFINE_MEM_VAR_ACCESSOR(memVar) \
+    static decltype(auto) get_ ## memVar (JNIEnv* env, jobject thiz)\
+    {\
+        return type_traits<decltype(type_traits<Point3>::c_cast(thiz).memVar)>::j_cast(type_traits<Point3>::c_cast(thiz).memVar);\
+    }\
+    static JNINativeMethod memVar()\
+    {\
+        return uc::jni::make_native_method(#memVar, &type_traits<Point3>::get_ ## memVar);\
+    }
+
+
+    UC_JNI_DEFINE_MEM_FUN_ACCESSOR(add)
+    UC_JNI_DEFINE_MEM_FUN_ACCESSOR(set)
+    UC_JNI_DEFINE_MEM_VAR_ACCESSOR(x)
+    UC_JNI_DEFINE_MEM_VAR_ACCESSOR(y)
+    UC_JNI_DEFINE_MEM_VAR_ACCESSOR(z)
+
+    static void regisger()
+    {
+        uc::jni::register_natives<jPoint3>({
+            x(), y(), z(),
+            add<Point3>(),
+            add<int, int, int>(),
+            set<int, int, int>()
+            // uc::jni::make_native_method("x", &uc::jni::type_traits<Point3>::get_x),
+            // uc::jni::make_native_method("y", &uc::jni::type_traits<Point3>::get_y),
+            // uc::jni::make_native_method("z", &uc::jni::type_traits<Point3>::get_z),
+            // uc::jni::make_native_method("add", &uc::jni::type_traits<Point3>::call_add<Point3>),
+            // uc::jni::make_native_method("set", &uc::jni::type_traits<Point3>::call_set<int, int, int>)
+        });
+    }
+
+};
+
+}
+}
+
+jPoint3 newPoint3(JNIEnv* env, jobject obj, jint x, jint y, jint z)
+{
+    return jPoint3_::new_(reinterpret_cast<jlong>(new Point3{x, y, z})).release();
+}
+
 JNI(void, testRegisterNatives)(JNIEnv *env, jobject thiz)
 {
     uc::jni::exception_guard([&] {
@@ -1224,11 +1330,19 @@ JNI(void, testRegisterNatives)(JNIEnv *env, jobject thiz)
             auto method = uc::jni::make_native_method("plusMethod", &plus);
             TEST_ASSERT_EQUALS(std::string("(II)I"), method.signature);
         }
-        JNINativeMethod m[]{
+        // JNINativeMethod m[]{
+        //     uc::jni::make_native_method("returnStringMethod", &returnString),
+        //     uc::jni::make_native_method("plusMethod", &plus)
+        // };
+        // TEST_ASSERT(uc::jni::register_natives<UcJniTest>(m));
+
+        TEST_ASSERT(uc::jni::register_natives<UcJniTest>({
             uc::jni::make_native_method("returnStringMethod", &returnString),
-            uc::jni::make_native_method("plusMethod", &plus)
-        };
-        TEST_ASSERT(uc::jni::register_natives<UcJniTest>(m));
+            uc::jni::make_native_method("plusMethod", &plus),
+            uc::jni::make_native_method("newPoint3", &newPoint3)
+        }));
+        uc::jni::type_traits<Point3>::regisger();
+
     });
 }
 

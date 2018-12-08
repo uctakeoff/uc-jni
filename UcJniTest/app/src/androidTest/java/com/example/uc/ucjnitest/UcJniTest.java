@@ -310,6 +310,7 @@ public class UcJniTest {
     public native boolean returnTrueMethod();
     public native String returnStringMethod(String str);
     public native int plusMethod(int a, int b);
+    public static native Point3 newPoint3(int x, int y, int z);
 
     @Test public void testRegisteredMethod() throws Exception
     {
@@ -317,6 +318,17 @@ public class UcJniTest {
         assertEquals(true, returnTrueMethod());
         assertEquals("[Message from Java] received.", returnStringMethod("Message from Java"));
         assertEquals(26, plusMethod(7, 19));
+
+        Point3 a = newPoint3(1, 2, 3);
+        Log.d("UcJniTest", "x=" + a.x() + ",y=" + a.y() + ",z=" + a.z());
+        Point3 b = newPoint3(4, 5, 6);
+        Log.d("UcJniTest", "x=" + b.x() + ",y=" + b.y() + ",z=" + b.z());
+        b.add(a);
+        Log.d("UcJniTest", "x=" + b.x() + ",y=" + b.y() + ",z=" + b.z());
+        a.set(10, 20, 30);
+        Log.d("UcJniTest", "x=" + a.x() + ",y=" + a.y() + ",z=" + a.z());
+        a.add(b);
+        Log.d("UcJniTest", "x=" + a.x() + ",y=" + a.y() + ",z=" + a.z());
     }
     public native void testRegisterNatives() throws Exception;
 
