@@ -178,7 +178,7 @@ UC_JNI_DEFINE_JCLASS(jPoint, com/example/uc/ucjnitest/Point)
 
 ### Local References
 
-`uc::jni::local_ref<T>` は `std::unique_ptr<T,>` の別名として定義されている。
+`uc::jni::ref<T>` は `std::unique_ptr<T,>` の別名として定義されている。
 
 スコープが切れた時点で `DeleteLocalRef()` が自動的に呼び出される。
 uc-jni のラッパー関数は、通常 JNIオブジェクトをこの形で返す。
@@ -206,7 +206,7 @@ uc-jni のラッパー関数は、通常 JNIオブジェクトをこの形で返
     // global_ref<jclass>
     auto clazz = uc::jni::make_global(uc::jni::get_object_class(thiz));
 
-    // local_ref や jobject を直接代入できる.
+    // ref や jobject を直接代入できる.
     // 所有権の移動はなく、新しいグローバル参照を作る。
     uc::jni::global_ref<jclass> superClazz = uc::jni::get_super_class(clazz);
     superClazz =  env->GetSuperclass(clazz.get());
@@ -219,7 +219,7 @@ JNIの弱参照を扱う `uc::jni::weak_ref<T>` は、 `std::weak_ptr<T>` のよ
 ```cpp
     uc::jni::weak_ref<jobject> wref = jobj;
 
-    uc::jni::local_ref<jobject> tmp = wref.lock();
+    uc::jni::ref<jobject> tmp = wref.lock();
     if (tmp) {
         :
         :
@@ -320,7 +320,7 @@ jint JNI_OnLoad(JavaVM * vm, void * __unused reserved)
 
 ```cpp
 
-    // decltype(jstr) == uc::jni::local_ref<jstring>
+    // decltype(jstr) == uc::jni::ref<jstring>
     auto jstr = uc::jni::to_jstring("Hello World!");
 
     std::string str = uc::jni::to_string(jstr);
@@ -424,14 +424,14 @@ void func(Point point)
     // jintArray to std::vector<jint>.
     auto intValues = uc::jni::to_vector(iArray);
 
-    // std::vector<jint> to local_ref<jintArray>.
+    // std::vector<jint> to ref<jintArray>.
     auto jintValues = uc::jni::to_jarray(intValues);
 
 
     // uc::jni::array<jstring> (inherited from jobjectArray) to std::vector<std::string>.
     auto stringValues = uc::jni::to_vector<std::string>(sArray);
 
-    // std::vector<std::string> to local_ref<uc::jni::array<jstring>>.
+    // std::vector<std::string> to ref<uc::jni::array<jstring>>.
     auto jstringValues = uc::jni::to_jarray(stringValues);
 
 ```
@@ -439,7 +439,7 @@ void func(Point point)
 ### Primitive Array
 
 ```cpp
-    // create local_ref<jintArray>.
+    // create ref<jintArray>.
     auto array = uc::jni::new_array<jint>(10);
 
     TEST_ASSERT_EQUALS(10, uc::jni::length(array));
@@ -517,7 +517,7 @@ void func(Point point)
     // String[] UcJniTest.getFieldStringArray()
     auto get = uc::jni::make_method<UcJniTest, uc::jni::array<jstring>()>("getFieldStringArray");
 
-    // decltype(array) == local_ref<array<jstring>>
+    // decltype(array) == ref<array<jstring>>
     auto array = get(thiz);
 ```
 

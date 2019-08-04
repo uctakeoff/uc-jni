@@ -176,7 +176,7 @@ In addition to the method / field API as in the above sample, various JNI functi
 
 ### Local References
 
-`uc::jni::local_ref<T>` is an alias for `std::unique_ptr<T,>`.
+`uc::jni::ref<T>` is an alias for `std::unique_ptr<T,>`.
 
 `DeleteLocalRef()` is called automatically.
 *uc-jni* functions normally returns a "JNI object" in this form.
@@ -204,7 +204,7 @@ A global reference is created by `NewGlobalRef()` at the time of assignment, and
     // global_ref<jclass>
     auto clazz = uc::jni::make_global(uc::jni::get_object_class(thiz));
 
-    // It is also possible to substitute local_ref. 
+    // It is also possible to substitute ref. 
     // Ownership does not shift and a new Global Reference can be created.
     uc::jni::global_ref<jclass> superClazz = uc::jni::get_super_class(clazz);
     superClazz =  env->GetSuperclass(clazz.get());
@@ -219,7 +219,7 @@ A global reference is created by `NewGlobalRef()` at the time of assignment, and
 ```cpp
     uc::jni::weak_ref<jobject> wref = jobj;
 
-    uc::jni::local_ref<jobject> tmp = wref.lock();
+    uc::jni::ref<jobject> tmp = wref.lock();
     if (tmp) {
         :
         :
@@ -313,7 +313,7 @@ Provide very fast access with minimal cost.
 
 ```cpp
 
-    // decltype(jstr) == uc::jni::local_ref<jstring>
+    // decltype(jstr) == uc::jni::ref<jstring>
     auto jstr = uc::jni::to_jstring("Hello World!");
 
     std::string str = uc::jni::to_string(jstr);
@@ -417,14 +417,14 @@ Other examples.
     // jintArray to std::vector<jint>.
     auto intValues = uc::jni::to_vector(iArray);
 
-    // std::vector<jint> to local_ref<jintArray>.
+    // std::vector<jint> to ref<jintArray>.
     auto jintValues = uc::jni::to_jarray(intValues);
 
 
     // uc::jni::array<jstring> (inherited from jobjectArray) to std::vector<std::string>.
     auto stringValues = uc::jni::to_vector<std::string>(sArray);
 
-    // std::vector<std::string> to local_ref<uc::jni::array<jstring>>.
+    // std::vector<std::string> to ref<uc::jni::array<jstring>>.
     auto jstringValues = uc::jni::to_jarray(stringValues);
 
 ```
@@ -432,7 +432,7 @@ Other examples.
 ### Primitive Array
 
 ```cpp
-    // create local_ref<jintArray>.
+    // create ref<jintArray>.
     auto array = uc::jni::new_array<jint>(10);
 
     TEST_ASSERT_EQUALS(10, uc::jni::length(array));
@@ -510,7 +510,7 @@ Use `uc::jni::array<T>` instead of `jobjectArray`.
     // String[] UcJniTest.getFieldStringArray()
     auto get = uc::jni::make_method<UcJniTest, uc::jni::array<jstring>()>("getFieldStringArray");
 
-    // decltype(array) == local_ref<array<jstring>>
+    // decltype(array) == ref<array<jstring>>
     auto array = get(thiz);
 ```
 

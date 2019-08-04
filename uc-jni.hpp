@@ -6,8 +6,8 @@ http://opensource.org/licenses/mit-license.php
 */
 #ifndef UC_JNI_HPP
 #define UC_JNI_HPP
-#define UC_JNI_VERSION "1.4.8"
-#define UC_JNI_VERSION_NUM 0x010408
+#define UC_JNI_VERSION "1.5.0"
+#define UC_JNI_VERSION_NUM 0x010500
 
 #include <jni.h>
 #include <memory>
@@ -110,17 +110,17 @@ typename T::element_type* to_native_ref(const T& obj) noexcept
 template <typename JType> using native_ref = decltype(to_native_ref<JType>({}));
 
 
-template <typename JType> struct local_ref_deleter
+template <typename JType> struct ref_deleter
 {
     void operator()(JType p) const noexcept
     {
         env()->DeleteLocalRef(p);
     }
 };
-template <typename JType> using local_ref = std::unique_ptr<std::remove_pointer_t<JType>, local_ref_deleter<JType>>;
-template <typename JType> local_ref<JType> make_local(JType obj) noexcept
+template <typename JType> using ref = std::unique_ptr<std::remove_pointer_t<JType>, ref_deleter<JType>>;
+template <typename JType> ref<JType> make_local(JType obj) noexcept
 {
-    return local_ref<JType>{ static_cast<JType>(env()->NewLocalRef(obj)) };
+    return ref<JType>{ static_cast<JType>(env()->NewLocalRef(obj)) };
 }
 /*
 template <typename JType> using global_ref = std::shared_ptr<std::remove_pointer_t<JType>>;
@@ -229,7 +229,7 @@ public:
     {
         return impl.swap(x.impl);
     }
-    local_ref<JType> lock() const
+    ref<JType> lock() const
     {
         return make_local(static_cast<JType>(impl.get()));
     }
@@ -260,34 +260,34 @@ template <typename JType> weak_ref<native_ref<JType>> make_weak(const JType& obj
 // Class and Object Operations
 //*************************************************************************************************
 
-template <typename T> constexpr decltype(auto) fqcn() noexcept
+template <typename T> constexpr auto fqcn() noexcept
 {
     return std::remove_pointer_t<T>::fqcn();
 }
-#define DEFINE_FQCN(type, sign) template <> constexpr decltype(auto) fqcn<type>() noexcept { return #sign; }
+#define DEFINE_FQCN(type, sign) template <> constexpr auto fqcn<type>() noexcept { return #sign; }
 DEFINE_FQCN(jobject,    java/lang/Object)
 DEFINE_FQCN(jstring,    java/lang/String)
 DEFINE_FQCN(jclass,     java/lang/Class)
 DEFINE_FQCN(jthrowable, java/lang/Throwable)
 #undef DEFINE_FQCN
 
-inline local_ref<jclass> find_class_native(const char* fqcn)
+inline ref<jclass> find_class_native(const char* fqcn)
 {
     auto o = env()->FindClass(fqcn);
     exception_check();
-    return local_ref<jclass>{o};
+    return ref<jclass>{o};
 }
-template <typename JClass> local_ref<jclass> get_super_class(const JClass& clazz) noexcept
+template <typename JClass> ref<jclass> get_super_class(const JClass& clazz) noexcept
 {
-    return local_ref<jclass>{ env()->GetSuperclass(to_native_ref(clazz)) };
+    return ref<jclass>{ env()->GetSuperclass(to_native_ref(clazz)) };
 }
 template <typename JClass1, typename JClass2> bool is_assignable_from(const JClass1& clazz1, const JClass2& clazz2) noexcept
 {
     return env()->IsAssignableFrom(to_native_ref(clazz1), to_native_ref(clazz2)) == JNI_TRUE;
 }
-template <typename JType> local_ref<jclass> get_object_class(const JType& jobj) noexcept
+template <typename JType> ref<jclass> get_object_class(const JType& jobj) noexcept
 {
-    return local_ref<jclass>{ env()->GetObjectClass(to_native_ref(jobj)) };
+    return ref<jclass>{ env()->GetObjectClass(to_native_ref(jobj)) };
 }
 template <typename JType, typename JClass> bool is_instance_of(const JType& jobj, const JClass& clazz) noexcept
 {
@@ -305,7 +305,7 @@ FAQ: Why didn't FindClass find my class? <https://developer.android.com/training
 References: FindClass from any thread in Android JNI <https://stackoverflow.com/questions/13263340/findclass-from-any-thread-in-android-jni>
 */
 namespace internal {
-    inline std::function<local_ref<jclass>(const char*)> get_class_loader_find_class_method(const local_ref<jclass>& cls)
+    inline std::function<ref<jclass>(const char*)> get_class_loader_find_class_method(const ref<jclass>& cls)
     {
         auto e = env();
         auto getClassLoader = e->GetMethodID(get_object_class(cls).get(), "getClassLoader", "()Ljava/lang/ClassLoader;");
@@ -317,10 +317,10 @@ namespace internal {
                 env()->ExceptionClear();
                 return find_class_native(fqcn);
             }
-            return local_ref<jclass>{o};
+            return ref<jclass>{o};
         };
     }
-    inline std::function<local_ref<jclass>(const char*)>& class_loader_find_class_cache(std::function<local_ref<jclass>(const char*)>&& cache = {})
+    inline std::function<ref<jclass>(const char*)>& class_loader_find_class_cache(std::function<ref<jclass>(const char*)>&& cache = {})
     {
         static auto instance(std::move(cache));
         return instance;
@@ -332,7 +332,7 @@ template<typename JType> void replace_with_class_loader_find_class()
     internal::class_loader_find_class_cache(internal::get_class_loader_find_class_method(find_class_native(fqcn<JType>())));
 }
 
-inline local_ref<jclass> find_class(const char* fqcn)
+inline ref<jclass> find_class(const char* fqcn)
 {
     const auto& find_class_fun = internal::class_loader_find_class_cache(find_class_native);
     return find_class_fun(fqcn);
@@ -344,7 +344,7 @@ template<typename JType> jclass get_class()
 }
 
 // get_class version
-template <typename JType> local_ref<jclass> get_super_class()
+template <typename JType> ref<jclass> get_super_class()
 {
     return get_super_class(get_class<JType>());
 }
@@ -485,14 +485,14 @@ template<> struct type_traits<bool>
 template <typename T> struct type_traits<T*>
 {
     using jvalue_type = T*;
-    static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
+    static ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
     static constexpr auto signature() noexcept { return make_cexprstr("L").append(fqcn<T*>()).append(";"); }
 };
-template <typename T> struct type_traits<local_ref<T>>
+template <typename T> struct type_traits<ref<T>>
 {
     using jvalue_type = T;
-    static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
+    static ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
     static constexpr auto signature() noexcept { return make_cexprstr("L").append(fqcn<T>()).append(";"); }
 };
@@ -506,7 +506,7 @@ template <typename T> struct type_traits<global_ref<T>>
 template <> struct type_traits<jobjectArray>
 {
     using jvalue_type = jobjectArray;
-    static local_ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
+    static ref<jvalue_type> c_cast(jvalue_type v) noexcept { return make_local(v); }
     template<typename V> static constexpr const V& j_cast(const V& v) noexcept { return v; }
     static constexpr auto signature() noexcept { return make_cexprstr("[").append(type_traits<jobject>::signature()); }
 };
@@ -552,15 +552,15 @@ template <typename T, typename Traits = string_traits<T>> auto get_chars(jstring
     return std::unique_ptr<const T, decltype(deleter)>(Traits::get_chars(env(), str, isCopy), std::move(deleter));
 }
 
-template <typename T, typename Traits = string_traits<T>> local_ref<jstring> to_jstring(const T* str, size_t n) noexcept
+template <typename T, typename Traits = string_traits<T>> ref<jstring> to_jstring(const T* str, size_t n) noexcept
 {
-    return local_ref<jstring>{ Traits::new_string(env(), str, static_cast<jsize>(n)) };
+    return ref<jstring>{ Traits::new_string(env(), str, static_cast<jsize>(n)) };
 }
-template <typename T, typename Traits = string_traits<T>> local_ref<jstring> to_jstring(const std::basic_string<T>& str) noexcept
+template <typename T, typename Traits = string_traits<T>> ref<jstring> to_jstring(const std::basic_string<T>& str) noexcept
 {
     return to_jstring<T,Traits>(str.c_str(), str.size());
 }
-template <typename T, size_t N, typename Traits = string_traits<T>> local_ref<jstring> to_jstring(const T (&str)[N]) noexcept
+template <typename T, size_t N, typename Traits = string_traits<T>> ref<jstring> to_jstring(const T (&str)[N]) noexcept
 {
     return to_jstring<T,Traits>(str, N-1);
 }
@@ -640,7 +640,7 @@ template <typename T, typename... Ts> void join_buffer(string_buffer& buf, T&& s
     append(buf, std::forward<T>(str));
     join_buffer(buf, std::forward<Ts>(strings)...);
 }
-template <typename... Ts> local_ref<jstring> join(Ts&&... strings)
+template <typename... Ts> ref<jstring> join(Ts&&... strings)
 {
     string_buffer buf;
     join_buffer(buf, std::forward<Ts>(strings)...);
@@ -774,9 +774,9 @@ jsize length(const T& array) noexcept
 }
 
 template <typename T, typename Traits = function_traits<native_array_t<T>>, std::enable_if_t<is_primitive_type<T>::value, std::nullptr_t> = nullptr>
-local_ref<native_array_t<T>> new_array(jsize length)
+ref<native_array_t<T>> new_array(jsize length)
 {
-    return local_ref<native_array_t<T>>{ Traits::new_array(env(), length) };
+    return ref<native_array_t<T>>{ Traits::new_array(env(), length) };
 }
 template <typename JArray, typename Traits = function_traits<native_ref<JArray>>, std::enable_if_t<is_primitive_array_type<native_ref<JArray>>::value, std::nullptr_t> = nullptr>
 void get_region(const JArray& array, jsize start, jsize len, typename Traits::value_type* buf)
@@ -859,15 +859,15 @@ template <typename Traits> typename const_array_elements<Traits>::pointer end(co
 //*************************************************************************************************
 
 template <typename T, std::enable_if_t<is_derived_from_jobject<T>::value, std::nullptr_t> = nullptr>
-local_ref<array<T>> new_array(jsize length)
+ref<array<T>> new_array(jsize length)
 {
-    return local_ref<array<T>>{ static_cast<array<T>>(env()->NewObjectArray(length, get_class<T>(), nullptr)) };
+    return ref<array<T>>{ static_cast<array<T>>(env()->NewObjectArray(length, get_class<T>(), nullptr)) };
 }
 template <typename JObjArray, std::enable_if_t<is_derived_from_jobject<native_array_element_t<JObjArray>>::value, std::nullptr_t> = nullptr> 
 auto get(const JObjArray& array, jsize index) noexcept
 {
     using jvalue_type = native_array_element_t<JObjArray>;
-    return local_ref<jvalue_type>{ static_cast<jvalue_type>(env()->GetObjectArrayElement(to_native_ref(array), index)) };
+    return ref<jvalue_type>{ static_cast<jvalue_type>(env()->GetObjectArrayElement(to_native_ref(array), index)) };
 }
 template <typename JObjArray, typename JType, std::enable_if_t<is_derived_from_jobject<native_array_element_t<JObjArray>>::value, std::nullptr_t> = nullptr> 
 void set(JObjArray& array, jsize index, const JType& value) noexcept
@@ -881,7 +881,7 @@ OutItr get_region(const JObjArray& array, jsize start, jsize len, OutItr itr, F 
     const auto e = env();
     auto arr = to_native_ref(array);
     for (jsize i = start, ie = start + len; i < ie; ++i) {
-        *itr = transform(local_ref<jvalue_type>{ static_cast<jvalue_type>(e->GetObjectArrayElement(arr, i)) });
+        *itr = transform(ref<jvalue_type>{ static_cast<jvalue_type>(e->GetObjectArrayElement(arr, i)) });
         ++itr;
     }
     return itr;
@@ -932,7 +932,7 @@ std::vector<T> to_vector(const JArray& array)
         const auto len = length(array);
         ret.reserve(len);
         for (jsize i = 0; i < len; ++i) {
-            auto lref = local_ref<jvalue_type>{ static_cast<jvalue_type>(e->GetObjectArrayElement(arr, i)) };
+            auto lref = ref<jvalue_type>{ static_cast<jvalue_type>(e->GetObjectArrayElement(arr, i)) };
             ret.emplace_back(type_traits<T>::c_cast(lref.get()));
         }
     }
@@ -941,7 +941,7 @@ std::vector<T> to_vector(const JArray& array)
 
 
 template <typename T, std::enable_if_t<is_primitive_type<T>::value, std::nullptr_t> = nullptr> 
-local_ref<native_array_t<T>> to_jarray(const T* data, size_t dataCount)
+ref<native_array_t<T>> to_jarray(const T* data, size_t dataCount)
 {
     const auto len = static_cast<jsize>(dataCount);
     auto ret = new_array<T>(len);
@@ -949,12 +949,12 @@ local_ref<native_array_t<T>> to_jarray(const T* data, size_t dataCount)
     return ret;
 }
 template <typename T, std::enable_if_t<is_primitive_type<T>::value, std::nullptr_t> = nullptr> 
-local_ref<native_array_t<T>> to_jarray(const std::vector<T>& vec)
+ref<native_array_t<T>> to_jarray(const std::vector<T>& vec)
 {
     return to_jarray(vec.data(), vec.size());
 }
 template <typename T, std::enable_if_t<std::is_same<T, bool>::value, std::nullptr_t> = nullptr> 
-local_ref<jbooleanArray> to_jarray(const std::vector<T>& vec)
+ref<jbooleanArray> to_jarray(const std::vector<T>& vec)
 {
     auto ret = new_array<jboolean>(static_cast<jsize>(vec.size()));
     auto elems = get_elements(ret);
@@ -962,7 +962,7 @@ local_ref<jbooleanArray> to_jarray(const std::vector<T>& vec)
     return ret;
 }
 template <typename T, std::enable_if_t<is_derived_from_jobject<typename type_traits<T>::jvalue_type>::value, std::nullptr_t> = nullptr> 
-local_ref<native_array_t<T>> to_jarray(const std::vector<T>& vec)
+ref<native_array_t<T>> to_jarray(const std::vector<T>& vec)
 {
     const auto e = env();
     const auto len = static_cast<jsize>(vec.size());
@@ -1154,11 +1154,11 @@ template <typename JType, typename... Args> struct constructor<JType(Args...)>
     {
         return get_method_id<JType, void(Args...)>("<init>");
     }
-    template<typename... Ts> local_ref<JType> operator()(const Ts&... args) const
+    template<typename... Ts> ref<JType> operator()(const Ts&... args) const
     {
         auto result = env()->NewObject(get_class<JType>(), id, to_native_ref(type_traits<Args>::j_cast(args))...);
         exception_check();
-        return local_ref<JType>{ static_cast<JType>(result) };
+        return ref<JType>{ static_cast<JType>(result) };
     }
 
     jmethodID id{};
@@ -1215,9 +1215,9 @@ template <typename JType> bool register_natives(std::initializer_list<JNINativeM
 //*************************************************************************************************
 // UC_JNI_DEFINE_JCLASS_ALIAS(DirectByteBuffer, java/nio/DirectByteBuffer);
 
-inline local_ref<jobject> new_direct_byte_buffer(void* address, jlong capacity) noexcept
+inline ref<jobject> new_direct_byte_buffer(void* address, jlong capacity) noexcept
 {
-    return local_ref<jobject>{ env()->NewDirectByteBuffer(address, capacity) };
+    return ref<jobject>{ env()->NewDirectByteBuffer(address, capacity) };
 }
 
 
@@ -1263,7 +1263,7 @@ namespace internal
 #define UC_JNI_DEFINE_JCLASS_ALIAS(className, fullyQualifiedClassName) \
     struct className ## _ : public std::remove_pointer_t<uc::jni::object> \
     {\
-        static constexpr decltype(auto) fqcn() noexcept {return #fullyQualifiedClassName;}\
+        static constexpr auto fqcn() noexcept {return #fullyQualifiedClassName;}\
     };\
     using className = className ## _*
 
@@ -1274,7 +1274,7 @@ namespace internal
     template<typename Derived> struct className ## _base : public std::remove_pointer_t<baseClassName>\
     {\
         using this_type = Derived*;\
-        static constexpr decltype(auto) fqcn() noexcept {return #fullyQualifiedClassName;}\
+        static constexpr auto fqcn() noexcept {return #fullyQualifiedClassName;}\
         template<typename ...Args> static auto new_(Args&&... args) { return Derived::construct(nullptr, std::forward<Args>(args)...); }\
     };\
     struct className ## _;\
@@ -1430,9 +1430,9 @@ private:
     std::string message;
 };
 
-inline local_ref<jthrowable> exception_occurred() noexcept
+inline ref<jthrowable> exception_occurred() noexcept
 {
-    return local_ref<jthrowable>(env()->ExceptionOccurred());
+    return ref<jthrowable>(env()->ExceptionOccurred());
 }
 inline void exception_check()
 {

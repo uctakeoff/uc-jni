@@ -263,7 +263,7 @@ JNI(void, samplePoint)(JNIEnv *env, jobject thiz)
         LOGD << "#########################################";
 //        LOGD << "####" << getClassName(p0);
         LOGD << "####" << getClassName(uc::jni::get_object_class(p0));
-        TEST_ASSERT_EQUALS(std::string(Point_::fqcn()), "android/graphics/Point");
+        TEST_ASSERT_EQUALS(std::string(Point::fqcn()), "android/graphics/Point");
         TEST_ASSERT_EQUALS(getClassName(uc::jni::get_object_class(p0)), "android.graphics.Point");
 
         LOGD << toString(p0) << ", " << toString(p1) << ", " << toString(p2);
@@ -324,7 +324,7 @@ JNI(void, throwInt)(JNIEnv *env, jobject thiz)
 inline jclass cached_find_class(JNIEnv* env, const char* name)
 {
     static std::mutex mutex{};
-    static std::unordered_map<std::string, uc::jni::local_ref<jclass>> table;
+    static std::unordered_map<std::string, uc::jni::ref<jclass>> table;
     std::lock_guard<std::mutex> lk(mutex);
     auto i = table.find(name);
     if (i == table.end()) {
@@ -472,7 +472,7 @@ JNI(void, testWeakRef)(JNIEnv *env, jobject thiz)
         TEST_ASSERT(globalStringArray);
         {
             auto expected = std::vector<std::string>{"abc", "de", "fghij", "", "A"};
-            auto actual = uc::jni::to_vector<uc::jni::local_ref<jstring>>(globalStringArray);
+            auto actual = uc::jni::to_vector<uc::jni::ref<jstring>>(globalStringArray);
             TEST_ASSERT(std::equal(expected.begin(), expected.end(), actual.begin(), actual.end(), [](auto& a, auto& b) { return a == uc::jni::to_string(b); }));
         }
 
@@ -1437,7 +1437,7 @@ template <> struct type_traits<std::map<std::string, int>>
     using jarray_type = uc::jni::array<jvalue_type>;
     static constexpr decltype(auto) signature() noexcept
     {
-        return type_traits<jvalue_type>::signature();
+        return HashMap::fqcn();//type_traits<jvalue_type>::signature();
     }
     static std::map<std::string, int> c_cast(jvalue_type value)
     {
